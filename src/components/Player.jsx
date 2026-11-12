@@ -132,10 +132,18 @@ function UpNext() {
   const jump = usePlayer((s) => s.jump)
   const removeAt = usePlayer((s) => s.removeAt)
   const autoFrom = usePlayer((s) => s.autoFrom)
+  const local = usePlayer((s) => s.local)
+  const bytes = usePlayer((s) => s.localBytes)
   const upcoming = queue.map((q, i) => [q, i]).slice(index + 1, index + 51)
   return (
     <>
       <h3>A continuación</h3>
+      {local.length > 0 && (
+        <p className="q-auto q-local">
+          <span className="tag ok">En el móvil</span>
+          {local.length === 1 ? '1 canción descargada' : `${local.length} canciones descargadas`} ({Math.max(1, Math.round(bytes / 1048576))} MB): suenan aunque pierdas la cobertura
+        </p>
+      )}
       {upcoming.length === 0 && <p className="muted small">No hay más canciones en la cola.</p>}
       {upcoming.map(([q, i]) => (
         <Fragment key={q.id + i}>
@@ -146,7 +154,7 @@ function UpNext() {
           </button>
           <div className="lib-text">
             <div className="lib-title">{q.title}</div>
-            <div className="lib-sub">{q.artist}</div>
+            <div className="lib-sub">{local.includes(q.id) && <span className="tag ok" title="Descargada en este dispositivo: suena aunque te quedes sin cobertura">En el móvil</span>}{q.artist}</div>
           </div>
           <button className="icon-btn more" onClick={() => removeAt(i)} aria-label={`Quitar ${q.title} de la cola`}><Icon name="x" size={16} /></button>
         </div>
@@ -171,6 +179,13 @@ export function NowPlaying() {
   const toggleLike = useLib((s) => s.toggleLike)
   const [queue, setQueue] = useState(false)
   const P = usePlayer.getState()
+  // De dónde sale lo que suena: copia descargada en el móvil o en directo desde la fuente
+  const source = usePlayer((s) => s.resolved?.source)
+  const isLocal = usePlayer((s) => !!s.current && s.local.includes(s.current.id))
+  const from = isLocal ? 'Descargada en el móvil'
+    : source === 'youtube' ? 'En directo desde YouTube'
+    : source === 'audius' ? 'En directo desde Audius'
+    : source === 'archive' ? 'En directo desde Internet Archive' : ''
 
   // Al navegar (ir al artista, al álbum…) se cierra sola
   useEffect(() => {
@@ -212,6 +227,7 @@ export function NowPlaying() {
         </button>
       </div>
       <div className="np-foot">
+        <span className={cx('np-from', isLocal && 'ok')}>{from}</span>
         <button className={cx('icon-btn', queue && 'on')} onClick={() => setQueue(!queue)} aria-label="Cola de reproducción" aria-pressed={queue}><Icon name="queue" size={22} /></button>
       </div>
     </div>

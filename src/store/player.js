@@ -2,7 +2,7 @@
 import { create } from 'zustand'
 import { engine } from '../lib/engine'
 import { matchTrack, rejectMatch } from '../lib/matcher'
-import { archive } from '../lib/sources/archive'
+import { buffer } from '../lib/buffer'
 import { audius } from '../lib/sources/audius'
 import { catalog } from '../lib/catalog'
 import { getSettings } from '../lib/settings'
@@ -58,14 +58,37 @@ export const usePlayer = create((set, get) => {
 
   // Deja listas las dos pistas siguientes (coincidencia y URL) para que el cambio de canción
   // sea inmediato y funcione también con la pantalla del móvil apagada
-  const prefetch = () => {
-    const s = get()
-    if (s.shuffle) return
-    for (const n of s.queue.slice(s.index + 1, s.index + 3)) {
-      Promise.resolve(n.source === 'pending' ? matchTrack(n.q) : n)
-        .then((r) => r?.source === 'archive' && archive.resolve(r.sid)).catch(() => {})
-    }
+  let pairs = [] // [pista de la cola, su fuente real] de la que suena y las dos siguientes
+  let plan = []  // en aleatorio, las posiciones de la cola que sonarán después (ya sorteadas)
+  const prefetch = async () => {
+    const s = get(), my = seq
+    const cur = s.queue[s.index]
+    if (!cur) return
+    if (s.shuffle) {
+      // Se sortean ya las dos siguientes para poder tenerlas descargadas
+      const out = new Set([...s.history, s.index, ...plan])
+      while (plan.length < 2) {
+        const rest = s.queue.map((_, k) => k).filter((k) => !out.has(k))
+        if (!rest.length) break
+        const k = rest[Math.floor(Math.random() * rest.length)]
+        plan.push(k); out.add(k)
+      }
+    } else plan = []
+    const upcoming = s.shuffle ? plan.map((k) => s.queue[k]) : s.queue.slice(s.index + 1, s.index + 3)
+    const real = await Promise.all(upcoming.map((n) => Promise.resolve(n.source === 'pending' ? matchTrack(n.q) : n).catch(() => null)))
+    if (my !== seq) return
+    // Buffer local: las que se pueden descargar (fuentes abiertas) se bajan ya al móvil, primero
+    // la que suena; lo que queda fuera de esta ventana (escuchado o saltado) se borra
+    const curReal = get().resolved || pairs.find(([q]) => q.id === cur.id)?.[1]
+    pairs = [[cur, curReal], ...upcoming.map((n, i) => [n, real[i]])].filter(([q, r]) => q && r)
+    buffer.want(pairs.map(([, r]) => r))
   }
+  buffer.on(() => {
+    const local = pairs.filter(([, r]) => buffer.has(r.id)).map(([q]) => q.id)
+    if (local.join() !== get().local.join()) set({ local, localBytes: buffer.stats().bytes })
+  })
+  // La cola ha cambiado: lo sorteado ya no vale y hay que revisar qué se tiene descargado
+  const replan = () => { plan = []; if (get().current) prefetch() }
 
   // Música infinita: cuando quedan menos de tres canciones por delante se añaden más sin repetir.
   // Primero las del mismo artista; cuando se acaban, la radio de ese artista y luego sus parecidos.
@@ -161,11 +184,14 @@ export const usePlayer = create((set, get) => {
     isPlaying: false, loading: false, time: 0, duration: 0,
     volume, muted: false, shuffle: false, repeat: 'off', context: null, history: [],
     autoFrom: null, // desde qué posición de la cola las canciones las ha añadido la música infinita
+    local: [],      // pistas de la cola que ya están descargadas en el móvil (buffer local)
+    localBytes: 0,  // lo que ocupan
 
     playList(tracks, start = 0, context = null) {
       if (!tracks?.length) return
       errors = 0
       gen++
+      plan = []
       // Desde una búsqueda se pone solo la canción elegida: lo que sigue lo trae la música infinita
       // (su artista y parecidos) en vez del resto de resultados, que suelen ser versiones de lo mismo
       if (context?.type === 'search' && getSettings().autoplay !== false) { tracks = [tracks[Math.max(0, start)]]; start = 0 }
@@ -184,11 +210,16 @@ export const usePlayer = create((set, get) => {
       if (auto && !afterError && s.repeat === 'one') { engine.seek(0); engine.play(); return }
       let i
       if (s.shuffle && s.queue.length > 1) {
-        // Aleatorio sin repetir: primero las que aún no han sonado
+        // Aleatorio sin repetir: primero las que aún no han sonado (si ya estaba sorteada, esa)
         const played = new Set([...s.history, s.index])
-        let rest = s.queue.map((_, k) => k).filter((k) => !played.has(k))
-        if (!rest.length && (s.repeat === 'all' || !auto)) rest = s.queue.map((_, k) => k).filter((k) => k !== s.index)
-        i = rest.length ? rest[Math.floor(Math.random() * rest.length)] : s.queue.length
+        const planned = plan.shift()
+        if (planned != null && planned < s.queue.length && !played.has(planned)) i = planned
+        else {
+          plan = []
+          let rest = s.queue.map((_, k) => k).filter((k) => !played.has(k))
+          if (!rest.length && (s.repeat === 'all' || !auto)) rest = s.queue.map((_, k) => k).filter((k) => k !== s.index)
+          i = rest.length ? rest[Math.floor(Math.random() * rest.length)] : s.queue.length
+        }
       } else i = s.index + 1
       if (i >= s.queue.length) {
         if (s.repeat === 'all' || !auto) i = 0
@@ -209,19 +240,21 @@ export const usePlayer = create((set, get) => {
       if (s.time > 3) { engine.seek(0); set({ time: 0 }); return }
       const history = s.history.slice()
       const i = history.length ? history.pop() : Math.max(0, s.index - 1)
+      plan = []
       set({ index: Math.min(i, s.queue.length - 1), history })
       load(true)
     },
     jump(i) {
       const s = get()
       if (i < 0 || i >= s.queue.length) return
+      plan = []
       set({ index: i, history: [...s.history, s.index].slice(-50) })
       load(true)
     },
     seek(t) { engine.seek(t); set({ time: t }) },
     setVolume(v) { engine.setVolume(v); set({ volume: v, muted: false }); store.set('esputi.volume', v) },
     toggleMute() { const s = get(); engine.setVolume(s.muted ? s.volume : 0); set({ muted: !s.muted }) },
-    toggleShuffle: () => set((s) => ({ shuffle: !s.shuffle })),
+    toggleShuffle: () => { set((s) => ({ shuffle: !s.shuffle })); replan() },
     cycleRepeat: () => set((s) => ({ repeat: s.repeat === 'off' ? 'all' : s.repeat === 'all' ? 'one' : 'off' })),
     addToQueue(t) {
       const empty = !get().queue.length
@@ -230,13 +263,15 @@ export const usePlayer = create((set, get) => {
         const at = s.autoFrom ?? s.queue.length
         return { queue: [...s.queue.slice(0, at), t, ...s.queue.slice(at)], autoFrom: s.autoFrom == null ? null : at + 1 }
       })
-      if (empty) { set({ index: 0 }); load(true) } else toast('Añadida a la cola')
+      if (empty) { set({ index: 0 }); load(true) } else { toast('Añadida a la cola'); replan() }
     },
     playNext(t) {
       const s = get()
       if (!s.queue.length) return get().addToQueue(t)
       const q = s.queue.slice(); q.splice(s.index + 1, 0, t)
       set({ queue: q, autoFrom: s.autoFrom != null && s.autoFrom > s.index ? s.autoFrom + 1 : s.autoFrom }); toast('Sonará a continuación')
+      // En aleatorio "a continuación" es de verdad la siguiente
+      if (s.shuffle) { plan = [s.index + 1]; prefetch() } else replan()
     },
     removeAt(i) {
       const s = get()
@@ -245,7 +280,8 @@ export const usePlayer = create((set, get) => {
         queue: s.queue.filter((_, k) => k !== i), index: i < s.index ? s.index - 1 : s.index, history: [],
         autoFrom: s.autoFrom != null && i < s.autoFrom ? s.autoFrom - 1 : s.autoFrom,
       })
+      replan()
     },
-    stop() { seq++; gen++; engine.stop(); set({ queue: [], index: -1, current: null, resolved: null, isPlaying: false, time: 0, duration: 0, autoFrom: null }) },
+    stop() { seq++; gen++; engine.stop(); pairs = []; plan = []; buffer.clear(); set({ queue: [], index: -1, current: null, resolved: null, isPlaying: false, time: 0, duration: 0, autoFrom: null, local: [], localBytes: 0 }) },
   }
 })

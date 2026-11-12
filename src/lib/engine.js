@@ -11,6 +11,7 @@
 //     impide que la pantalla se bloquee sola (y la app la pone en negro).
 import { streamUrl } from './sources/audius'
 import { archive } from './sources/archive'
+import { buffer } from './buffer'
 import { getSettings } from './settings'
 import { store } from './util'
 
@@ -24,6 +25,10 @@ let intent = false        // el usuario quiere que suene (aunque el sistema lo h
 let interrupted = false   // se cortó con la pantalla apagada: se retoma al volver
 let ytState = -1, ytTime = 0, ytId = null
 let switching = false     // cambiando de vídeo: la pausa del anterior no cuenta
+let loads = 0             // identifica la carga en curso del audio directo
+let curId = null          // pista de audio directo que suena
+let fromLocal = false     // suena desde la copia descargada en el móvil
+let resumeAt = null       // punto por el que seguir al pasar a la copia local
 
 const UA = typeof navigator !== 'undefined' ? navigator.userAgent : ''
 const IOS = /iPad|iPhone|iPod/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1)
@@ -32,8 +37,26 @@ const TOUCH = typeof matchMedia !== 'undefined' && matchMedia('(hover: none)').m
 audio.addEventListener('ended', () => mode === 'audio' && cb.onEnded?.())
 audio.addEventListener('play', () => mode === 'audio' && cb.onPlay?.())
 audio.addEventListener('pause', () => mode === 'audio' && !audio.ended && cb.onPause?.())
-audio.addEventListener('error', () => mode === 'audio' && audio.getAttribute('src') && cb.onError?.())
-audio.addEventListener('waiting', () => mode === 'audio' && cb.onBuffer?.(true))
+// Si la red falla (o se queda corta) a mitad de canción y ya está descargada entera en el
+// móvil, se sigue desde esa copia por donde iba, sin cortes
+function goLocal() {
+  if (mode !== 'audio' || fromLocal || !curId) return false
+  const url = buffer.url(curId)
+  if (!url) return false
+  resumeAt = audio.currentTime || 0
+  fromLocal = true
+  audio.src = url
+  if (intent) audio.play().catch(() => {})
+  return true
+}
+audio.addEventListener('loadedmetadata', () => {
+  if (resumeAt == null) return
+  const at = resumeAt; resumeAt = null
+  if (at > 0.5) audio.currentTime = at
+})
+audio.addEventListener('error', () => mode === 'audio' && audio.getAttribute('src') && !goLocal() && cb.onError?.())
+audio.addEventListener('waiting', () => mode === 'audio' && !goLocal() && cb.onBuffer?.(true))
+audio.addEventListener('stalled', () => mode === 'audio' && intent && audio.readyState < 3 && goLocal())
 audio.addEventListener('playing', () => mode === 'audio' && cb.onBuffer?.(false))
 
 // Diagnóstico anónimo del modo "pantalla apagada": solo un código de evento, visible en
@@ -189,6 +212,7 @@ export const engine = {
     clearTimeout(rescueTimer)
     interrupted = false
     if (track.source === 'youtube') {
+      loads++; curId = null; resumeAt = null
       audio.pause(); audio.removeAttribute('src')
       mode = 'yt'
       intent = autoplay
@@ -206,7 +230,15 @@ export const engine = {
     mode = 'audio'
     intent = autoplay
     wake()
-    audio.src = track.source === 'archive' ? await archive.resolve(track.sid) : streamUrl(track.sid)
+    // Si ya está descargada en el móvil suena desde ahí (sin red); si no, en directo
+    const my = ++loads
+    let url = buffer.url(track.id)
+    curId = track.id; fromLocal = !!url; resumeAt = null
+    if (!url) {
+      url = track.source === 'archive' ? await archive.resolve(track.sid) : streamUrl(track.sid)
+      if (my !== loads) return // ya se pidió otra pista
+    }
+    audio.src = url
     if (autoplay) audio.play().catch(() => { /* error real → evento 'error'; bloqueo de autoplay → queda en pausa */ })
   },
   play() {
@@ -221,6 +253,7 @@ export const engine = {
   setVolume(v) { volume = v; audio.volume = v; yt?.setVolume?.(v * 100) },
   stop() {
     intent = false; interrupted = false; clearTimeout(rescueTimer)
+    loads++; curId = null; resumeAt = null
     audio.pause(); audio.removeAttribute('src'); yt?.stopVideo?.(); keepPause(); wake()
   },
 }
