@@ -3,7 +3,6 @@ import Login from './components/Login'
 import InstallBanner from './components/Install'
 import UpdateBanner from './components/Update'
 import Tastes from './components/Tastes'
-import Pocket from './components/Pocket'
 import { ContextMenu, CookieBanner, Library, MobileNav, Toast, TopBar } from './components/Shell'
 import { NowPlaying, PlayerBar, QueuePanel } from './components/Player'
 import { Spinner } from './components/Common'
@@ -88,7 +87,6 @@ export default function App() {
       <CookieBanner />
       {session && ready && asked && <InstallBanner />}
       <UpdateBanner />
-      <Pocket />
     </>
   )
 }

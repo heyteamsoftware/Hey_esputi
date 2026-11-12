@@ -6,14 +6,11 @@
 //  1. Un sonido de fondo casi inaudible mantiene viva la página y hace que los
 //     mandos de la pantalla de bloqueo sean los de Esputi.
 //  2. Si el sistema pausa el vídeo con la pantalla apagada, se intenta reanudar
-//     y, si no basta, se vuelve a cargar por donde iba.
-//  3. Mientras no se haya comprobado en este móvil que lo anterior funciona, se
-//     impide que la pantalla se bloquee sola (y la app la pone en negro).
+//     y, si no basta, se vuelve a cargar por donde iba. Si tampoco, queda en pausa
+//     y se retoma al volver a encender la pantalla.
 import { streamUrl } from './sources/audius'
 import { archive } from './sources/archive'
 import { buffer } from './buffer'
-import { getSettings } from './settings'
-import { store } from './util'
 
 const audio = new Audio()
 audio.preload = 'auto'
@@ -32,7 +29,6 @@ let resumeAt = null       // punto por el que seguir al pasar a la copia local
 
 const UA = typeof navigator !== 'undefined' ? navigator.userAgent : ''
 const IOS = /iPad|iPhone|iPod/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1)
-const TOUCH = typeof matchMedia !== 'undefined' && matchMedia('(hover: none)').matches
 
 audio.addEventListener('ended', () => mode === 'audio' && cb.onEnded?.())
 audio.addEventListener('play', () => mode === 'audio' && cb.onPlay?.())
@@ -68,10 +64,6 @@ function beacon(code, once) {
   try { fetch(`${import.meta.env.BASE_URL}version.json?bg=${code}&t=${Date.now() % 100000}`, { cache: 'no-store', keepalive: true }).catch(() => {}) } catch { /* nada */ }
 }
 
-// ¿Se ha comprobado en este dispositivo que el reproductor incrustado sigue con la pantalla apagada?
-let bg = store.get('esputi.bg', null) // 'ok' | 'no' | null
-const setBg = (v) => { if (bg !== v) { bg = v; store.set('esputi.bg', v) } }
-
 // ── 1. Sonido de fondo casi inaudible (40 Hz a −75 dB) ──
 function quietWav(seconds = 12, rate = 8000) {
   const n = seconds * rate, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf)
@@ -91,32 +83,18 @@ function keepEl() {
   // bloqueo, los auriculares o una llamada: se sigue esa orden
   keep.addEventListener('pause', () => {
     if (Date.now() - keepSelf < 900 || mode !== 'yt' || !intent) return
-    intent = false; clearTimeout(rescueTimer); yt?.pauseVideo?.(); cb.onPause?.(); wake()
+    intent = false; clearTimeout(rescueTimer); yt?.pauseVideo?.(); cb.onPause?.()
   })
   keep.addEventListener('play', () => {
     if (Date.now() - keepSelf < 900 || mode !== 'yt') return
     manual = true; intent = true; interrupted = false; rescues = 0
-    yt?.playVideo?.(); wake(); beacon('lk')
+    yt?.playVideo?.(); beacon('lk')
     if (document.hidden) rescue(1) // si aun así no arranca, se deja en pausa de verdad
   })
   return keep
 }
 const keepPlay = () => { if (IOS) return; keepSelf = Date.now(); keepEl().play().catch(() => {}) }
 const keepPause = () => { if (!keep) return; keepSelf = Date.now(); keep.pause() }
-
-// ── 3. Mantener la pantalla sin bloquear mientras haga falta ──
-let lock = null
-const needsScreen = () => TOUCH && mode === 'yt' && intent && bg !== 'ok' && getSettings().keepScreen !== false
-async function wake() {
-  try {
-    if (needsScreen()) {
-      if (!lock && navigator.wakeLock && !document.hidden) {
-        lock = await navigator.wakeLock.request('screen')
-        lock.addEventListener('release', () => { lock = null })
-      }
-    } else if (lock) { const l = lock; lock = null; await l.release() }
-  } catch { /* sin permiso o sin soporte */ }
-}
 
 // ── 2. Rescate cuando el sistema pausa el vídeo con la pantalla apagada ──
 let rescueTimer = null, rescues = 0, hiddenBase = null, hiddenStates = 0
@@ -127,9 +105,8 @@ function rescue(step) {
     if (!document.hidden) { if (ytState !== 1) yt.playVideo(); return }
     if (ytState === 1) return // ya suena
     if (rescues++ > 4 || step > 1) {
-      // No hay manera en este móvil: se deja en pausa (el botón de la pantalla de bloqueo
-      // lo reanuda) y en adelante se evita que la pantalla se apague sola
-      beacon('ko'); setBg('no'); interrupted = true; intent = false; keepPause(); cb.onPause?.()
+      // No hay manera en este móvil: se deja en pausa y se retoma al encender la pantalla
+      beacon('ko'); interrupted = true; intent = false; keepPause(); cb.onPause?.()
       return
     }
     if (step === 0) { beacon('r1'); yt.playVideo() }
@@ -142,12 +119,13 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     hiddenBase = ytTime; manual = false
     if (mode === 'yt' && intent) beacon('h')
+    // Audio directo: 'hl' si suena la copia descargada en el móvil, 'ha' si va en directo
+    else if (mode === 'audio' && intent) beacon(fromLocal ? 'hl' : 'ha')
     return
   }
   hiddenBase = null; rescues = 0; hiddenStates = 0; sent.clear()
   if (mode === 'yt' && interrupted) { interrupted = false; engine.play() }
   else if (mode === 'yt' && intent && ytState !== 1 && ytState !== 3) yt?.playVideo?.()
-  wake()
 })
 
 function loadYT() {
@@ -170,13 +148,13 @@ function loadYT() {
             if (e.data !== 2 && e.data !== 5) switching = false
             if (e.data === 0) cb.onEnded?.()
             else if (e.data === 1) {
-              if (!intent) { intent = true; keepPlay(); wake() }
+              if (!intent) { intent = true; keepPlay() }
               cb.onPlay?.(); cb.onBuffer?.(false)
               if (document.hidden) beacon('pl', 'pl' + ytId)
             } else if (e.data === 2) {
               // Pausa con la pantalla apagada que nadie ha pedido: la ha hecho el sistema
               if (intent && document.hidden) { beacon('sp', 'sp' + ytId); rescue(0) }
-              else { if (intent) { intent = false; keepPause(); wake() } cb.onPause?.() }
+              else { if (intent) { intent = false; keepPause() } cb.onPause?.() }
             } else if (e.data === 3) cb.onBuffer?.(true)
           },
           onError: (e) => { if (mode === 'yt') cb.onError?.(e.data) },
@@ -198,7 +176,7 @@ setInterval(() => {
     cb.onTime?.(ytTime, yt.getDuration() || 0)
     // Suena de verdad con la pantalla apagada y sin ayuda del usuario: este móvil lo permite
     if (document.hidden && hiddenBase != null && ytState === 1 && !manual && ytTime > hiddenBase + 6) {
-      hiddenBase = null; setBg('ok'); beacon('ok', 'ok' + ytId); wake()
+      hiddenBase = null; beacon('ok', 'ok' + ytId)
     }
   }
 }, 400)
@@ -206,8 +184,6 @@ setInterval(() => {
 export const engine = {
   on(handlers) { cb = handlers },
   mode: () => mode,
-  // ¿Hace falta ahora mismo tener la pantalla encendida para que no se corte la música?
-  needsScreen,
   async load(track, autoplay = true) {
     clearTimeout(rescueTimer)
     interrupted = false
@@ -219,7 +195,6 @@ export const engine = {
       ytId = track.sid; ytTime = 0
       if (document.hidden) hiddenBase = 0
       if (autoplay) keepPlay()
-      wake()
       const p = await loadYT()
       if (ytId !== track.sid) return // ya se pidió otra pista
       switching = true
@@ -229,7 +204,6 @@ export const engine = {
     if (mode === 'yt') { yt?.stopVideo?.(); keepPause() }
     mode = 'audio'
     intent = autoplay
-    wake()
     // Si ya está descargada en el móvil suena desde ahí (sin red); si no, en directo
     const my = ++loads
     let url = buffer.url(track.id)
@@ -243,17 +217,17 @@ export const engine = {
   },
   play() {
     intent = true; interrupted = false; rescues = 0
-    if (mode === 'yt') { keepPlay(); yt?.playVideo?.(); wake() } else audio.play().catch(() => {})
+    if (mode === 'yt') { keepPlay(); yt?.playVideo?.() } else audio.play().catch(() => {})
   },
   pause() {
     intent = false; interrupted = false; clearTimeout(rescueTimer)
-    if (mode === 'yt') { keepPause(); yt?.pauseVideo?.(); wake() } else audio.pause()
+    if (mode === 'yt') { keepPause(); yt?.pauseVideo?.() } else audio.pause()
   },
   seek(s) { if (mode === 'yt') { yt?.seekTo?.(s, true); ytTime = s; if (hiddenBase != null) hiddenBase = s } else if (isFinite(s)) audio.currentTime = s },
   setVolume(v) { volume = v; audio.volume = v; yt?.setVolume?.(v * 100) },
   stop() {
     intent = false; interrupted = false; clearTimeout(rescueTimer)
     loads++; curId = null; resumeAt = null
-    audio.pause(); audio.removeAttribute('src'); yt?.stopVideo?.(); keepPause(); wake()
+    audio.pause(); audio.removeAttribute('src'); yt?.stopVideo?.(); keepPause()
   },
 }

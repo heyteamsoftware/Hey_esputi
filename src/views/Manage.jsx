@@ -151,7 +151,7 @@ export function Settings() {
   const drop = (g) => setPrefs((prefs?.likes || []).filter((x) => x !== g), (prefs?.dislikes || []).filter((x) => x !== g))
   const save = (e) => {
     e.preventDefault()
-    saveSettings({ spotifyClientId: s.spotifyClientId.trim(), ytKey: s.ytKey.trim(), keepScreen: s.keepScreen !== false, autoplay: s.autoplay !== false })
+    saveSettings({ spotifyClientId: s.spotifyClientId.trim(), ytKey: s.ytKey.trim(), autoplay: s.autoplay !== false })
     clearMisses()
     toast('Ajustes guardados')
   }
@@ -165,14 +165,11 @@ export function Settings() {
           <span>Música infinita: cuando se acabe lo que suena, seguir con más canciones del mismo artista y de artistas parecidos</span>
         </label>
         <h2>Pantalla apagada</h2>
-        <label className="check">
-          <input type="checkbox" checked={s.keepScreen !== false} onChange={(e) => flip('keepScreen', e.target.checked)} />
-          <span>Si una canción necesita la pantalla encendida para no cortarse, dejarla en negro en lugar de que se bloquee<br /><span className="muted small">Solo se usa en móviles y solo cuando hace falta.</span></span>
-        </label>
         <p className="muted small">
-          La música independiente (Audius e Internet Archive) suena siempre con la pantalla apagada. El resto depende del navegador del móvil:
-          si el tuyo tiene la opción «Reproducción en segundo plano» (Samsung Internet, Brave o Edge la traen en sus ajustes), actívala y Esputi
-          lo detectará solo. Si no, deja que la pantalla se quede en negro en lugar de pulsar el botón de apagado.
+          La música independiente (Audius e Internet Archive) se descarga en el móvil mientras suena y sigue con la pantalla apagada.
+          El resto suena en directo desde YouTube y el móvil la pausa al apagar la pantalla, salvo que tu navegador tenga la opción
+          «Reproducción en segundo plano» (Samsung Internet, Brave o Edge la traen en sus ajustes). En la pantalla de la canción,
+          abajo, pone de dónde suena cada una.
         </p>
         <h2>Fuentes de música</h2>
         <p className="muted small">Esputi busca en Audius, YouTube e Internet Archive sin configurar nada. Si tienes tu propia clave de YouTube Data API puedes usarla aquí (opcional).</p>
