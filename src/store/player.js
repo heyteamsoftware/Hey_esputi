@@ -51,6 +51,10 @@ export const usePlayer = create((set, get) => {
         if (!t.cover && real.cover) set({ current: { ...t, cover: real.cover } })
       }
       set({ resolved: real })
+      // Pre-descargar la canción actual y las dos siguientes ANTES de reproducir
+      // para que estén en buffer si la red falla
+      await prefetch()
+      if (my !== seq) return
       await engine.load(real, autoplay)
       if (my !== seq) return
     } catch { fail(my) }
