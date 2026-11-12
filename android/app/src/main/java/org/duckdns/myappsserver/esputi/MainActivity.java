@@ -11,6 +11,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -27,8 +28,22 @@ public class MainActivity extends Activity {
         + "<p>No hay conexi&oacute;n con Esputi</p>"
         + "<p><a style='color:#ff4fa3' href='" + HOME + "'>Reintentar</a></p></body></html>";
 
+    // Cada segundo mira en la web qué suena (título, artista, carátula, si está en marcha) y avisa
+    // a la app cuando cambia, para la notificación y la pantalla de bloqueo
+    private static final String WATCH =
+        "(function(){if(window.__esputiApp)return;window.__esputiApp=1;var last='';setInterval(function(){"
+        + "var m=navigator.mediaSession&&navigator.mediaSession.metadata,b=document.querySelector('.play-btn');"
+        + "var s=[m?m.title:'',m?m.artist:'',m&&m.artwork&&m.artwork[0]?m.artwork[0].src:'',!!b&&b.getAttribute('aria-label')==='Pausar'];"
+        + "var k=JSON.stringify(s);if(k!==last){last=k;EsputiApp.state(s[0],s[1],s[2],s[3]);}},1000);})();";
+
     static MainActivity current;
     private WebView web;
+
+    class Bridge {
+        @JavascriptInterface public void state(String title, String artist, String cover, boolean playing) {
+            runOnUiThread(() -> PlaybackService.update(title, artist, cover, playing));
+        }
+    }
 
     // La vista web siempre se considera visible: el reproductor no se pausa al apagar la pantalla
     static class AlwaysVisibleWebView extends WebView {
@@ -52,6 +67,7 @@ public class MainActivity extends Activity {
         s.setSupportMultipleWindows(false);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
 
+        web.addJavascriptInterface(new Bridge(), "EsputiApp");
         web.setWebChromeClient(new WebChromeClient());
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
@@ -61,6 +77,9 @@ public class MainActivity extends Activity {
                 if (host.equals("myappsserver.duckdns.org") || host.equals("accounts.spotify.com")) return false;
                 try { startActivity(new Intent(Intent.ACTION_VIEW, u)); } catch (Exception e) { /* sin navegador */ }
                 return true;
+            }
+            @Override public void onPageFinished(WebView v, String url) {
+                if (url != null && url.startsWith(HOME)) v.evaluateJavascript(WATCH, null);
             }
             @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
                 if (r.isForMainFrame()) v.loadDataWithBaseURL(null, OFFLINE, "text/html", "utf-8", null);
