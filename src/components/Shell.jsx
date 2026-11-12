@@ -4,6 +4,7 @@ import Icon from './Icon'
 import { Cover, LikedCover } from './Common'
 import { cx, store } from '../lib/util'
 import { api } from '../lib/api'
+import { syncNow } from '../lib/sync'
 import { nav, plPath, useUI } from '../store/ui'
 import { useLib } from '../store/library'
 import { usePlayer } from '../store/player'
@@ -31,7 +32,7 @@ export function TopBar({ route }) {
   return (
     <header className="topbar">
       <div className="topbar-left">
-        <a href="#/" className="logo" aria-label="Esputi, ir al inicio">
+        <a href="#/" className="logo" onClick={syncNow} aria-label="Esputi, ir al inicio y sincronizar">
           <img src={import.meta.env.BASE_URL + 'favicon.svg?v=2'} alt="" width="32" height="32" />
         </a>
         <button className="round-btn hide-m" onClick={() => history.back()} aria-label="Atrás"><Icon name="back" /></button>

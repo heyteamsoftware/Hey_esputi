@@ -3,7 +3,7 @@
 //   compara una huella de sus canciones.
 // - Con la cuenta conectada (opcional): API oficial y su snapshot_id; sirve para
 //   playlists privadas y de más de 100 canciones.
-import { fetchPlaylist, fetchPublic, isConnected, parsePlaylistId, snapshotOf } from './spotify'
+import { fetchPlaylist, fetchPublic, isConnected, parseLink, snapshotOf, spTrack } from './spotify'
 import { useLib } from '../store/library'
 import { toast, useUI } from '../store/ui'
 
@@ -12,21 +12,30 @@ const PUBLIC_EVERY = 120000   // sin cuenta se pregunta menos a menudo
 let running = false
 let lastPublic = 0
 
-// Descarga la playlist por la mejor vía disponible
-async function fetchAny(id) {
-  if (isConnected()) {
+// Descarga la playlist por la mejor vía disponible (los álbumes, siempre por la pública)
+async function fetchAny(id, kind = 'playlist') {
+  if (kind === 'playlist' && isConnected()) {
     try { return { ...(await fetchPlaylist(id)), via: 'api' } } catch { /* p. ej. playlist editorial: se prueba la vía pública */ }
   }
-  return { ...(await fetchPublic(id)), via: 'public' }
+  return { ...(await fetchPublic(id, kind)), via: 'public' }
 }
 
-export async function importPlaylist(text) {
-  const id = parsePlaylistId(text)
-  if (!id) throw new Error('Pega el enlace de una playlist de Spotify')
-  const pl = await fetchAny(id)
-  if (!pl.items.length) throw new Error('La playlist está vacía o es privada')
+// Importa un enlace de Spotify. Playlists y álbumes quedan como listas sincronizadas;
+// una canción suelta se guarda en «Canciones que te gustan».
+export async function importLink(text) {
+  const link = parseLink(text)
+  if (!link) throw new Error('Pega el enlace de una playlist, un álbum o una canción de Spotify')
+  if (link.kind === 'track') {
+    const track = spTrack((await fetchPublic(link.id, 'track')).track)
+    const L = useLib.getState()
+    const had = L.lib.liked.some((x) => x.id === track.id)
+    if (!had) L.toggleLike(track)
+    return { kind: 'track', track, had }
+  }
+  const pl = await fetchAny(link.id, link.kind)
+  if (!pl.items.length) throw new Error(link.kind === 'album' ? 'El álbum está vacío' : 'La playlist está vacía o es privada')
   useLib.getState().upsertSpotify(pl)
-  return pl
+  return { kind: link.kind, pl }
 }
 
 function apply(old, pl) {
@@ -50,9 +59,9 @@ export async function checkAll(force = false) {
   for (const old of lists) {
     try {
       if (connected && old.via === 'api') {
-        if (force || (await snapshotOf(old.id)) !== old.snapshot) apply(old, await fetchAny(old.id))
+        if (force || (await snapshotOf(old.id)) !== old.snapshot) apply(old, await fetchAny(old.id, old.kind))
       } else if (publicDue) {
-        const pl = await fetchAny(old.id)
+        const pl = await fetchAny(old.id, old.kind)
         if (force || pl.snapshot !== old.snapshot) apply(old, pl)
       }
     } catch (e) { error = e.message }
@@ -60,6 +69,21 @@ export async function checkAll(force = false) {
   if (publicDue) lastPublic = Date.now()
   running = false
   useUI.getState().setSync({ checking: false, last: Date.now(), error })
+}
+
+// Sincronización a mano (al tocar el logo): la biblioteca del servidor, por si hay listas nuevas
+// hechas en otro equipo, y las playlists de Spotify
+let syncing = false
+export async function syncNow() {
+  if (syncing || !useLib.getState().ready) return
+  syncing = true
+  toast('Sincronizando…')
+  try {
+    const changed = await useLib.getState().refresh()
+    await checkAll(true)
+    toast(changed ? 'Biblioteca actualizada' : 'Todo está al día')
+  } catch { toast('No se pudo sincronizar: sin conexión con el servidor') }
+  syncing = false
 }
 
 export function startSync() {

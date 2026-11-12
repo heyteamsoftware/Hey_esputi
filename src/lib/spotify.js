@@ -76,10 +76,12 @@ async function get(path) {
   return r.json()
 }
 
-export const parsePlaylistId = (text = '') => {
+// Enlace o URI de Spotify → { kind: 'playlist' | 'album' | 'track', id }
+export const parseLink = (text = '') => {
   const s = String(text).trim()
-  const m = s.match(/playlist[/:]([A-Za-z0-9]{16,})/) || s.match(/^([A-Za-z0-9]{22})$/)
-  return m ? m[1] : null
+  const m = s.match(/(playlist|album|track)[/:]([A-Za-z0-9]{16,})/)
+  if (m) return { kind: m[1], id: m[2] }
+  return /^[A-Za-z0-9]{22}$/.test(s) ? { kind: 'playlist', id: s } : null
 }
 
 export const me = () => get('/me')
@@ -121,11 +123,11 @@ export async function fetchPlaylist(id) {
 }
 
 // Datos públicos de la playlist (sin cuenta), a través de nuestra pasarela de solo lectura
-export async function fetchPublic(id) {
+export async function fetchPublic(id, kind = 'playlist') {
   let r
-  try { r = await fetch(import.meta.env.BASE_URL + 'api/spotify.php?id=' + encodeURIComponent(id)) } catch { throw new Error('No hay conexión con el servidor') }
+  try { r = await fetch(import.meta.env.BASE_URL + 'api/spotify.php?type=' + kind + '&id=' + encodeURIComponent(id)) } catch { throw new Error('No hay conexión con el servidor') }
   const j = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(j.error || 'No se pudo leer la playlist')
+  if (!r.ok) throw new Error(j.error || 'No se pudo leer el enlace de Spotify')
   return { ...j, syncedAt: Date.now() }
 }
 

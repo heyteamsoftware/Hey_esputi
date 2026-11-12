@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import Icon from '../components/Icon'
 import { Cover, Section } from '../components/Common'
 import { connect, disconnect, isConnected, me, redirectUri } from '../lib/spotify'
-import { checkAll, importPlaylist } from '../lib/sync'
+import { checkAll, importLink } from '../lib/sync'
 import { getSettings, saveSettings } from '../lib/settings'
 import { clearMisses } from '../lib/matcher'
 import { GENRE_LABEL } from '../lib/taste'
@@ -61,10 +61,13 @@ export function Sync() {
     e.preventDefault()
     setError(''); setBusy(true)
     try {
-      const pl = await importPlaylist(url)
+      const r = await importLink(url)
       setUrl('')
-      toast(`«${pl.name}» sincronizada (${pl.items.length} canciones)`)
-      nav(plPath('spotify', pl.id))
+      if (r.kind === 'track') { if (r.had) toast(`«${r.track.title}» ya estaba en Canciones que te gustan`) }
+      else {
+        toast(`«${r.pl.name}» ${r.kind === 'album' ? 'sincronizado' : 'sincronizada'} (${r.pl.items.length} canciones)`)
+        nav(plPath('spotify', r.pl.id))
+      }
     } catch (err) { setError(err.message); setConnected(isConnected()) }
     setBusy(false)
   }
@@ -73,19 +76,20 @@ export function Sync() {
     <div className="view narrow">
       <h1 className="h1"><Icon name="sync" size={30} /> Spotify Live Sync</h1>
       <p className="muted">
-        Pega el enlace de una playlist pública de Spotify y listo. Esputi busca cada canción en sus fuentes abiertas y
-        mantiene la lista al día: si se añaden o quitan canciones en Spotify, aquí cambia sola.
+        Pega el enlace de una playlist pública, un álbum o una canción de Spotify y listo. Esputi busca cada canción en sus
+        fuentes y mantiene las listas al día: si se añaden o quitan canciones en Spotify, aquí cambian solas. Una canción
+        suelta se guarda en «Canciones que te gustan».
       </p>
 
       <form className="box" onSubmit={doImport} noValidate>
-        <label htmlFor="plurl">Enlace de la playlist</label>
+        <label htmlFor="plurl">Enlace de Spotify (playlist, álbum o canción)</label>
         <div className="inline">
-          <input id="plurl" className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://open.spotify.com/playlist/…"
+          <input id="plurl" className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://open.spotify.com/…"
             maxLength={300} autoComplete="off" inputMode="url" />
           <button className="btn primary" disabled={busy || !url.trim()}>{busy ? 'Leyendo…' : 'Sincronizar'}</button>
         </div>
         <p className="error" role="alert">{error}</p>
-        <p className="muted small">En Spotify: Compartir → Copiar enlace de la playlist. Las canciones que no estén en las fuentes abiertas aparecen en gris.</p>
+        <p className="muted small">En Spotify: Compartir → Copiar enlace. Las canciones que no estén en las fuentes abiertas aparecen en gris.</p>
       </form>
 
       <Section title="Playlists sincronizadas">

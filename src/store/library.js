@@ -66,6 +66,17 @@ export const useLib = create((set, get) => {
       }
       set({ ready: true })
     },
+    // Vuelve a pedir la biblioteca al servidor por si se ha cambiado desde otro equipo
+    async refresh() {
+      const { session, lib } = get()
+      if (!session) return false
+      let r
+      try { r = await api.getLib(session) } catch (e) { if (e.status === 401) get().logout(true); throw e }
+      const remote = r.library ? fix(r.library) : null
+      if (!remote || remote.updatedAt <= lib.updatedAt) return false
+      set({ lib: remote }); store.set(libKey(session.name), remote)
+      return true
+    },
     logout(expired) {
       const { session } = get()
       if (session && !expired) api.logout(session).catch(() => {})
