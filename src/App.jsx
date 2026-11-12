@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import Login from './components/Login'
 import InstallBanner from './components/Install'
 import UpdateBanner from './components/Update'
+import Tastes from './components/Tastes'
+import Pocket from './components/Pocket'
 import { ContextMenu, CookieBanner, Library, MobileNav, Toast, TopBar } from './components/Shell'
-import { PlayerBar, QueuePanel } from './components/Player'
+import { NowPlaying, PlayerBar, QueuePanel } from './components/Player'
 import { Spinner } from './components/Common'
-import { Artist, Home, Search } from './views/Browse'
+import { Artist, Home, Search, Style } from './views/Browse'
 import Playlist from './views/Playlist'
 import { Settings, Sync } from './views/Manage'
 import { startSync } from './lib/sync'
@@ -27,10 +29,13 @@ function useRoute() {
 function View({ route }) {
   switch (route.name) {
     case 'search': return <Search q={route.a} />
-    case 'pl': return <Playlist key={route.a + route.b} type={route.a} id={route.b} />
+    // Los enlaces antiguos a un artista como si fuera una lista van a su ficha
+    case 'pl': return route.a === 'artist' ? <Artist id={route.b} /> : <Playlist key={route.a + route.b} type={route.a} id={route.b} />
     case 'artist': return <Artist id={route.a} />
+    case 'style': return <Style key={route.a} genre={route.a} />
     case 'sync': return <Sync />
     case 'settings': return <Settings />
+    case 'tastes': return <Tastes />
     case 'library': return <div className="view lib-view"><Library route={route} /></div>
     default: return <Home />
   }
@@ -39,6 +44,7 @@ function View({ route }) {
 export default function App() {
   const session = useLib((s) => s.session)
   const ready = useLib((s) => s.ready)
+  const asked = useLib((s) => !!s.lib.prefs)
   const panel = useUI((s) => s.panel)
   const route = useRoute()
   const main = useRef()
@@ -65,7 +71,7 @@ export default function App() {
 
   return (
     <>
-      {!session ? <Login /> : !ready ? <div className="boot"><Spinner /></div> : (
+      {!session ? <Login /> : !ready ? <div className="boot"><Spinner /></div> : !asked ? <Tastes first /> : (
         <div className={cx('app', panel && 'with-panel')}>
           <TopBar route={route} />
           <aside className="sidebar"><Library route={route} /></aside>
@@ -73,14 +79,16 @@ export default function App() {
           {panel && <QueuePanel />}
           <PlayerBar />
           <MobileNav route={route} />
+          <NowPlaying />
         </div>
       )}
       <div id="yt-host" className="yt-host" />
       <ContextMenu />
       <Toast />
       <CookieBanner />
-      {session && ready && <InstallBanner />}
+      {session && ready && asked && <InstallBanner />}
       <UpdateBanner />
+      <Pocket />
     </>
   )
 }

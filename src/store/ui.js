@@ -20,6 +20,8 @@ export const useUI = create((set) => ({
     set({ menu: { x, y, items: items.filter(Boolean) } })
   },
   closeMenu: () => set({ menu: null }),
+  np: false, // pantalla completa "Reproduciendo" (móvil)
+  setNp: (np) => set({ np }),
   togglePanel: () => set((s) => { store.set('esputi.panel', !s.panel); return { panel: !s.panel } }),
   setSync: (patch) => set((s) => ({ sync: { ...s.sync, ...patch } })),
 }))
@@ -33,4 +35,4 @@ export const parseRoute = () => {
   return { name: p[0] || 'home', a: dec(p[1]), b: dec(p.slice(2).join('/')) }
 }
 export const nav = (path) => { location.hash = '#/' + path }
-export const plPath = (type, id) => `pl/${type}/${encodeURIComponent(id ?? '')}`
+export const plPath = (type, id) => (type === 'artist' ? 'artist/' : `pl/${type}/`) + encodeURIComponent(id ?? '')

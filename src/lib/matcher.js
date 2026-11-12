@@ -63,10 +63,13 @@ async function find(q) {
   const safe = (p) => p.catch(() => { failed++; return [] })
   // Umbral mínimo por fuente y pequeña ventaja para las que suenan con la pantalla apagada
   const RULES = { audius: [0.8, 0.05], archive: [0.8, 0.05], youtube: [0.7, 0] }
+  const qa = tokens(artist), ua = (c) => tokens(c.artist)
   const pick = (lists) => {
     let top = null, ts = 0
     for (const c of lists.flat()) {
       if (banned.has(c.id)) continue
+      // En Audius solo vale la canción subida por el propio artista, no las copias de terceros
+      if (c.source === 'audius' && !qa.every((w) => ua(c).includes(w))) continue
       const [min, bonus] = RULES[c.source]
       const s = score(q, c)
       if (s >= min && s + bonus > ts) { ts = s + bonus; top = c }

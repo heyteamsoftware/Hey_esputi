@@ -6,7 +6,7 @@ import { api } from '../lib/api'
 import { store, uid } from '../lib/util'
 import { toast } from './ui'
 
-const empty = () => ({ liked: [], playlists: [], spotify: [], saved: [], updatedAt: 0 })
+const empty = () => ({ liked: [], playlists: [], spotify: [], saved: [], prefs: null, updatedAt: 0 })
 const fix = (l) => ({ ...empty(), ...(l || {}) })
 const libKey = (name) => 'esputi.lib.' + name.toLowerCase()
 const recKey = (name) => 'esputi.recents.' + name.toLowerCase()
@@ -73,6 +73,9 @@ export const useLib = create((set, get) => {
       set({ session: null, lib: empty(), recents: [], searches: [], ready: false })
       if (expired) toast('Tu sesión ha caducado, vuelve a entrar')
     },
+
+    // Encuesta de gustos: estilos preferidos y estilos que no se muestran
+    setPrefs(likes, dislikes) { mutate((l) => ({ ...l, prefs: { likes: likes.slice(0, 5), dislikes: dislikes.slice(0, 5) } })) },
 
     toggleLike(t) {
       const liked = get().lib.liked.some((x) => x.id === t.id)

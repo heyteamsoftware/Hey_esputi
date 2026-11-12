@@ -22,6 +22,7 @@ export const mapTrack = (t) => ({
   duration: t.duration || 0,
   cover: art(t.artwork),
   genre: t.genre || '',
+  plays: t.play_count || 0,
 })
 
 const mapPlaylist = (p) => ({

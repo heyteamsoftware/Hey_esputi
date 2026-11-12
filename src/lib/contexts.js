@@ -2,6 +2,9 @@
 // favoritos, playlist de Audius, género, álbum de Archive o playlist de Spotify.
 import { audius } from './sources/audius'
 import { archive } from './sources/archive'
+import { catalog } from './catalog'
+import { legend } from './legends'
+import { GENRE_LABEL } from './taste'
 import { spTrack } from './spotify'
 import { useLib } from '../store/library'
 import { usePlayer } from '../store/player'
@@ -33,6 +36,38 @@ export async function remoteContext(type, id) {
       type, id, kind: 'Género', name: id || 'Tendencias', owner: 'Audius', description: 'Lo más escuchado esta semana',
       tracks: await audius.trending(id || undefined, 50),
     }
+  }
+  // Catálogo: álbum, éxitos por estilo, radio de un artista y sus canciones más escuchadas
+  if (type === 'album') {
+    const a = await catalog.album(id)
+    return { ...a, description: [a.year, a.genre].filter(Boolean).join(' · ') }
+  }
+  if (type === 'chart') {
+    return {
+      type, id, kind: 'Lista de éxitos', name: id ? `Éxitos de ${GENRE_LABEL[id] || id}` : 'Éxitos del momento', owner: 'Esputi',
+      description: 'Lo más escuchado en España ahora mismo', tracks: await catalog.chart(id, 50),
+    }
+  }
+  // Listas imprescindibles de cada estilo (los grupos famosos)
+  if (type === 'legend') return legend(id)
+  if (type === 'radio') {
+    const [a, tracks] = await Promise.all([catalog.artist(id), catalog.radio(id)])
+    return { type, id, kind: 'Radio', name: `Radio de ${a.name}`, owner: 'Esputi', cover: a.cover, description: `Canciones parecidas a las de ${a.name}`, tracks }
+  }
+  if (type === 'artist') {
+    // Artista conocido solo por su nombre: se busca en el catálogo
+    const named = String(id).match(/^(?:name|yt):(.+)$/)
+    if (named) {
+      const a = await catalog.artistByName(named[1])
+      if (!a) throw new Error('Artista desconocido')
+      id = a.id
+    }
+    if (String(id).startsWith('cat:')) {
+      const [a, tracks] = await Promise.all([catalog.artist(id.slice(4)), catalog.artistTop(id.slice(4), 30)])
+      return { type, id, kind: 'Artista', name: a.name, owner: '', cover: a.cover, tracks }
+    }
+    const [u, tracks] = await Promise.all([audius.user(id), audius.userTracks(id, 50)])
+    return { type, id, kind: 'Artista', name: u.name, owner: '', cover: u.cover, tracks }
   }
   throw new Error('Lista desconocida')
 }

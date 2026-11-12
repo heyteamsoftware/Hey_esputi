@@ -5,6 +5,12 @@ import { cx, fmtTime } from '../lib/util'
 import { usePlayer } from '../store/player'
 import { useLib } from '../store/library'
 import { nav, plPath, useUI } from '../store/ui'
+import { cachedMatch } from '../lib/matcher'
+
+// Enlaces de una canción a su artista y a su álbum (catálogo, Audius o Internet Archive)
+export const artistHref = (t) => '#/' + plPath('artist', t.artistId || 'name:' + String(t.artist).split(',')[0].trim())
+export const albumPath = (t) => (String(t.albumId).startsWith('cat:') ? plPath('album', t.albumId.slice(4)) : plPath('archive', t.albumId))
+const catArtist = (t) => (String(t.artistId || '').startsWith('cat:') ? t.artistId.slice(4) : null)
 
 // Menú contextual de una canción
 export function trackMenu(t, { onRemove } = {}) {
@@ -17,9 +23,10 @@ export function trackMenu(t, { onRemove } = {}) {
     { label: liked ? 'Quitar de Canciones que te gustan' : 'Guardar en Canciones que te gustan', onClick: () => L.toggleLike(t) },
     ...L.lib.playlists.slice(0, 12).map((p) => ({ label: `Añadir a «${p.name}»`, onClick: () => L.addToPlaylist(p.id, t) })),
     { label: 'Añadir a una playlist nueva', onClick: () => { const p = L.createPlaylist(t.title, [t]); nav(plPath('own', p.id)) } },
-    (t.artistId || t.albumId) && { sep: true },
-    t.artistId && { label: 'Ir al artista', onClick: () => nav('artist/' + t.artistId) },
-    t.albumId && { label: 'Ir al álbum', onClick: () => nav(plPath('archive', t.albumId)) },
+    { sep: true },
+    t.artist && { label: 'Ir al artista', onClick: () => { location.hash = artistHref(t) } },
+    t.albumId && { label: 'Ir al álbum', onClick: () => nav(albumPath(t)) },
+    catArtist(t) && { label: 'Ir a la radio del artista', onClick: () => nav(plPath('radio', catArtist(t))) },
     onRemove && { sep: true },
     onRemove && { label: 'Quitar de esta playlist', danger: true, onClick: () => onRemove(t) },
   ]
@@ -48,13 +55,17 @@ function Row({ t, i, active, playing, liked, showAlbum, status, onPlay, onRemove
           <div className="row-title">{t.title}</div>
           <div className="row-artist">
             {missing && <span className="tag warn">No encontrada</span>}
-            {t.artistId
-              ? <a href={'#/artist/' + t.artistId} onClick={(e) => e.stopPropagation()}>{t.artist}</a>
+            {t.artist && !/^(desconocido|internet archive)$/i.test(t.artist)
+              ? <a href={artistHref(t)} onClick={(e) => e.stopPropagation()}>{t.artist}</a>
               : t.artist}
           </div>
         </div>
       </div>
-      {showAlbum && <div className="row-album">{t.album || ''}</div>}
+      {showAlbum && (
+        <div className="row-album">
+          {t.album && t.albumId ? <a href={'#/' + albumPath(t)} onClick={(e) => e.stopPropagation()}>{t.album}</a> : t.album || ''}
+        </div>
+      )}
       <div className="row-end">
         <button className={cx('icon-btn like', liked && 'on')} onClick={(e) => { e.stopPropagation(); toggleLike(t) }}
           aria-label={liked ? 'Quitar de favoritos' : 'Guardar en favoritos'} aria-pressed={liked}>
@@ -69,7 +80,7 @@ function Row({ t, i, active, playing, liked, showAlbum, status, onPlay, onRemove
   )
 }
 
-export default function TrackList({ tracks, context, showAlbum, onRemove, statusOf, header = true }) {
+export default function TrackList({ tracks, context, showAlbum, onRemove, statusOf, limit, header = true }) {
   const currentId = usePlayer((s) => s.current?.id)
   const playing = usePlayer((s) => s.isPlaying)
   const playList = usePlayer((s) => s.playList)
@@ -86,9 +97,9 @@ export default function TrackList({ tracks, context, showAlbum, onRemove, status
           <div className="row-end"><Icon name="clock" size={16} /></div>
         </div>
       )}
-      {tracks.map((t, i) => (
+      {(limit ? tracks.slice(0, limit) : tracks).map((t, i) => (
         <Row key={t.id + ':' + i} t={t} i={i} active={t.id === currentId} playing={playing} liked={liked.has(t.id)}
-          showAlbum={showAlbum} status={statusOf ? statusOf(t) : undefined} onPlay={onPlay} onRemove={onRemove} />
+          showAlbum={showAlbum} status={statusOf ? statusOf(t) : t.source === 'pending' && cachedMatch(t.q) === null ? null : undefined} onPlay={onPlay} onRemove={onRemove} />
       ))}
     </div>
   )

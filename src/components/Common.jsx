@@ -6,8 +6,17 @@ import { usePlayer } from '../store/player'
 import { playContext } from '../lib/contexts'
 
 // Portada con respaldo: si no hay imagen (o falla) se dibuja un degradado
-export function Cover({ src, alt, className, round, icon = 'music', seed }) {
+export function Cover({ src, alt, className, round, icon = 'music', seed, covers }) {
   const [bad, setBad] = useState(false)
+  const [badMosaic, setBadMosaic] = useState(false)
+  // Portada de cuatro fotos (listas imprescindibles); si alguna falla se usa la normal
+  if (covers?.length >= 4 && !badMosaic) {
+    return (
+      <div className={cx('cover mosaic', className)} role="img" aria-label={alt}>
+        {covers.slice(0, 4).map((c) => <img key={c} src={c} alt="" loading="lazy" onError={() => setBadMosaic(true)} />)}
+      </div>
+    )
+  }
   if (!src || bad) {
     const h = hueOf(seed || alt || '')
     return (
@@ -57,7 +66,7 @@ export function ContextCard({ item }) {
   return (
     <div className="card" role="link" tabIndex={0} onClick={go} onKeyDown={(e) => e.key === 'Enter' && go()}>
       <div className="card-img">
-        <Cover src={item.cover} alt={`Portada de ${item.name}`} seed={item.name} />
+        <Cover src={item.cover} covers={item.covers} alt={`Portada de ${item.name}`} seed={item.name} />
         <div className={cx('card-play', active && playing && 'show')}>
           <PlayFab small playing={active && playing} label={`Reproducir ${item.name}`}
             onClick={(e) => { e.stopPropagation(); active ? toggle() : playContext(item) }} />
@@ -90,7 +99,7 @@ export function TrackCard({ track, onPlay }) {
 }
 
 export function ArtistCard({ artist }) {
-  const go = () => nav('artist/' + artist.id)
+  const go = () => nav(plPath('artist', artist.id))
   return (
     <div className="card" role="link" tabIndex={0} onClick={go} onKeyDown={(e) => e.key === 'Enter' && go()}>
       <div className="card-img"><Cover round src={artist.cover} alt={`Foto de ${artist.name}`} seed={artist.name} /></div>

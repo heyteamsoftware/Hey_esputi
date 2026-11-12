@@ -6,6 +6,7 @@ import { connect, disconnect, isConnected, me, redirectUri } from '../lib/spotif
 import { checkAll, importPlaylist } from '../lib/sync'
 import { getSettings, saveSettings } from '../lib/settings'
 import { clearMisses } from '../lib/matcher'
+import { GENRE_LABEL } from '../lib/taste'
 import { ago } from '../lib/util'
 import { nav, plPath, toast, useUI } from '../store/ui'
 import { useLib } from '../store/library'
@@ -142,9 +143,15 @@ export function Settings() {
   const logout = useLib((s) => s.logout)
   const stop = usePlayer((s) => s.stop)
   const [s, setS] = useState(getSettings())
+  const prefs = useLib((x) => x.lib.prefs)
+  const setPrefs = useLib((x) => x.setPrefs)
+  // Las casillas se guardan al tocarlas, sin esperar al botón
+  const flip = (k, v) => { setS({ ...s, [k]: v }); saveSettings({ [k]: v }) }
+  // Quitar un estilo de los gustos con un toque
+  const drop = (g) => setPrefs((prefs?.likes || []).filter((x) => x !== g), (prefs?.dislikes || []).filter((x) => x !== g))
   const save = (e) => {
     e.preventDefault()
-    saveSettings({ spotifyClientId: s.spotifyClientId.trim(), ytKey: s.ytKey.trim() })
+    saveSettings({ spotifyClientId: s.spotifyClientId.trim(), ytKey: s.ytKey.trim(), keepScreen: s.keepScreen !== false, autoplay: s.autoplay !== false })
     clearMisses()
     toast('Ajustes guardados')
   }
@@ -152,6 +159,21 @@ export function Settings() {
     <div className="view narrow">
       <h1 className="h1">Ajustes</h1>
       <form className="box" onSubmit={save} noValidate>
+        <h2>Reproducción</h2>
+        <label className="check">
+          <input type="checkbox" checked={s.autoplay !== false} onChange={(e) => flip('autoplay', e.target.checked)} />
+          <span>Música infinita: cuando se acabe lo que suena, seguir con más canciones del mismo artista y de artistas parecidos</span>
+        </label>
+        <h2>Pantalla apagada</h2>
+        <label className="check">
+          <input type="checkbox" checked={s.keepScreen !== false} onChange={(e) => flip('keepScreen', e.target.checked)} />
+          <span>Si una canción necesita la pantalla encendida para no cortarse, dejarla en negro en lugar de que se bloquee<br /><span className="muted small">Solo se usa en móviles y solo cuando hace falta.</span></span>
+        </label>
+        <p className="muted small">
+          La música independiente (Audius e Internet Archive) suena siempre con la pantalla apagada. El resto depende del navegador del móvil:
+          si el tuyo tiene la opción «Reproducción en segundo plano» (Samsung Internet, Brave o Edge la traen en sus ajustes), actívala y Esputi
+          lo detectará solo. Si no, deja que la pantalla se quede en negro en lugar de pulsar el botón de apagado.
+        </p>
         <h2>Fuentes de música</h2>
         <p className="muted small">Esputi busca en Audius, YouTube e Internet Archive sin configurar nada. Si tienes tu propia clave de YouTube Data API puedes usarla aquí (opcional).</p>
         <label htmlFor="ytk">Clave de YouTube Data API v3 (opcional)</label>
@@ -164,6 +186,21 @@ export function Settings() {
         <CopyField value={redirectUri()} label="la Redirect URI" />
         <button className="btn primary">Guardar ajustes</button>
       </form>
+      <div className="box">
+        <h2>Tus gustos</h2>
+        <p>Los estilos que te gustan llenan tu portada; los que excluyes no aparecen. Toca uno para quitarlo.</p>
+        <p className="muted small">Te gustan</p>
+        <div className="tastes-chips">
+          {(prefs?.likes || []).map((g) => <button type="button" key={g} className="chip on" onClick={() => drop(g)} aria-label={`Quitar ${GENRE_LABEL[g] || g} de tus gustos`}>{GENRE_LABEL[g] || g} ✕</button>)}
+          {!(prefs?.likes || []).length && <span className="muted small">Todavía no has elegido ninguno.</span>}
+        </div>
+        <p className="muted small">No quieres ver</p>
+        <div className="tastes-chips">
+          {(prefs?.dislikes || []).map((g) => <button type="button" key={g} className="chip off" onClick={() => drop(g)} aria-label={`Dejar de excluir ${GENRE_LABEL[g] || g}`}>{GENRE_LABEL[g] || g} ✕</button>)}
+          {!(prefs?.dislikes || []).length && <span className="muted small">Ninguno.</span>}
+        </div>
+        <a className="btn ghost" href="#/tastes">Añadir o quitar estilos</a>
+      </div>
       <div className="box">
         <h2>Tu cuenta</h2>
         <p>Has entrado como <strong>{session.animal} {session.name}</strong>. Tus listas y favoritos se guardan en el servidor (solo texto) para que los tengas en cualquier equipo.</p>

@@ -8,7 +8,7 @@ import { ctxRef, localContext, LOCAL_TYPES, remoteContext } from '../lib/context
 import { cachedMatch, clearMisses, matchTrack } from '../lib/matcher'
 import { checkAll } from '../lib/sync'
 import { ago, cx, fmtTotal, hueOf, pool } from '../lib/util'
-import { nav, toast, useUI } from '../store/ui'
+import { nav, plPath, toast, useUI } from '../store/ui'
 import { useLib } from '../store/library'
 import { usePlayer } from '../store/player'
 
@@ -64,7 +64,7 @@ export default function Playlist({ type, id }) {
   const tracks = isSpotify ? c.tracks.map((t) => (t.cover ? t : { ...t, cover: cachedMatch(t.q)?.cover || '' })) : c.tracks
   const total = tracks.reduce((a, t) => a + (t.duration || 0), 0)
   const saved = lib.saved.some((x) => x.type === type && x.id === id)
-  const canSave = type === 'audius' || type === 'archive'
+  const canSave = type === 'audius' || type === 'archive' || type === 'album' || type === 'legend'
   const found = isSpotify ? tracks.filter((t) => cachedMatch(t.q)).length : 0
   const pendingMatch = isSpotify ? tracks.filter((t) => cachedMatch(t.q) === undefined).length : 0
   const cover = c.cover || tracks[0]?.cover
@@ -83,7 +83,7 @@ export default function Playlist({ type, id }) {
   return (
     <div className="view pl">
       <div className="pl-head" style={{ '--h': type === 'liked' ? 255 : hueOf(c.name) }}>
-        {type === 'liked' ? <LikedCover className="pl-cover" /> : <Cover src={cover} alt={`Portada de ${c.name}`} seed={c.name} className="pl-cover" />}
+        {type === 'liked' ? <LikedCover className="pl-cover" /> : <Cover src={cover} covers={c.covers} alt={`Portada de ${c.name}`} seed={c.name} className="pl-cover" />}
         <div className="pl-info">
           <span className="pl-kind">{c.kind}</span>
           {editing ? (
@@ -95,7 +95,7 @@ export default function Playlist({ type, id }) {
           )}
           {c.description && <p className="pl-desc">{c.description}</p>}
           <p className="pl-meta">
-            <strong>{c.owner}</strong> • {tracks.length} {tracks.length === 1 ? 'canción' : 'canciones'}{total > 0 && `, ${fmtTotal(total)}`}
+            {c.owner && <><strong>{c.ownerId ? <a href={'#/' + plPath('artist', c.ownerId)}>{c.owner}</a> : c.owner}</strong> • </>}{tracks.length} {tracks.length === 1 ? 'canción' : 'canciones'}{total > 0 && `, ${fmtTotal(total)}`}
           </p>
           {isSpotify && (
             <p className="pl-sync">
@@ -125,7 +125,7 @@ export default function Playlist({ type, id }) {
       </div>
 
       {tracks.length ? (
-        <TrackList tracks={tracks} context={ctxRef({ ...c, cover })} showAlbum={isSpotify && tracks.some((t) => t.album)}
+        <TrackList tracks={tracks} context={ctxRef({ ...c, cover })} showAlbum={type !== 'album' && tracks.some((t) => t.album)}
           statusOf={isSpotify ? (t) => cachedMatch(t.q) : undefined}
           onRemove={type === 'own' ? (t) => L.removeFromPlaylist(id, t.id) : undefined} />
       ) : (

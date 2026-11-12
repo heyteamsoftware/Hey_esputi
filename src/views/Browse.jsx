@@ -1,17 +1,20 @@
-// Inicio, búsqueda y página de artista.
+// Inicio, búsqueda y ficha de artista.
 import { useEffect, useState } from 'react'
 import Icon from '../components/Icon'
 import { ArtistCard, ContextCard, Cover, Empty, LikedCover, PlayFab, Section, Spinner, TrackCard } from '../components/Common'
-import TrackList from '../components/TrackList'
+import TrackList, { albumPath, artistHref } from '../components/TrackList'
 import { audius, GENRES } from '../lib/sources/audius'
 import { archive } from '../lib/sources/archive'
 import { youtube } from '../lib/sources/youtube'
+import { catalog, CHART } from '../lib/catalog'
+import { searchAll } from '../lib/search'
 import { cx, hueOf, norm } from '../lib/util'
 import { nav, plPath } from '../store/ui'
 import { useLib } from '../store/library'
 import { usePlayer } from '../store/player'
 import { playContext } from '../lib/contexts'
-import { GENRE_LABEL, taste, tasteKey } from '../lib/taste'
+import { GENRE_LABEL, STYLES, excluded, taste, tasteKey } from '../lib/taste'
+import { because, hasLegends, legendArtists, legendLists, mainLegends } from '../lib/legends'
 
 // Carga asíncrona con estado; ignora respuestas de peticiones antiguas
 export function useAsync(fn, deps) {
@@ -42,12 +45,61 @@ function Shelf({ title, state, more, render }) {
 }
 
 function TrackShelf({ title, genre }) {
-  const st = useAsync(cached('trend:' + (genre || ''), () => audius.trending(genre, 30)), [genre])
+  const dislikes = useLib((s) => s.lib.prefs?.dislikes)
+  const raw = useAsync(cached('trend:' + (genre || ''), () => audius.trending(genre, 30)), [genre])
+  // Fuera lo que el usuario excluyó en la encuesta de gustos
+  const st = raw.data && dislikes?.length ? { ...raw, data: raw.data.filter((t) => !excluded(t, dislikes)) } : raw
   const playList = usePlayer((s) => s.playList)
   const ctx = { type: 'genre', id: genre || '', name: genre || 'Tendencias', cover: st.data?.[0]?.cover }
   return (
     <Shelf title={title} state={st} more={{ label: 'Mostrar todo', onClick: () => nav(plPath('genre', genre || '')) }}
       render={(t, i) => <TrackCard key={t.id} track={t} onPlay={() => playList(st.data, i, ctx)} />} />
+  )
+}
+
+// Éxitos del catálogo (los conocidos) de un estilo, o generales si no se indica
+function ChartShelf({ title, genre = '' }) {
+  const dislikes = useLib((s) => s.lib.prefs?.dislikes)
+  const raw = useAsync(cached('chart:' + genre, () => catalog.chart(genre, 40)), [genre])
+  // Fuera lo que el usuario excluyó en sus gustos
+  const st = raw.data && dislikes?.length ? { ...raw, data: raw.data.filter((t) => !excluded(t, dislikes)) } : raw
+  const playList = usePlayer((s) => s.playList)
+  const ctx = { type: 'chart', id: genre, name: title, cover: st.data?.[0]?.cover }
+  return (
+    <Shelf title={title} state={st} more={{ label: 'Mostrar todo', onClick: () => nav(plPath('chart', genre)) }}
+      render={(t, k) => <TrackCard key={t.id} track={t} onPlay={() => playList(st.data, k, ctx)} />} />
+  )
+}
+
+// "Porque te gusta el rock": sus listas imprescindibles y los grupos famosos del estilo
+function BecauseShelf({ genre, title }) {
+  const lists = legendLists(genre)
+  if (!lists.length) return null
+  return (
+    <Section title={title || `Porque te gusta ${because(genre)}`} more={{ label: 'Mostrar todo', onClick: () => nav('style/' + encodeURIComponent(genre)) }}>
+      <div className="shelf">
+        {lists.map((l) => <ContextCard key={l.id} item={l} />)}
+        {legendArtists(genre, 10 - lists.length).map((a) => <ArtistCard key={a.id} artist={a} />)}
+      </div>
+    </Section>
+  )
+}
+
+// Página de un estilo: los imprescindibles, los éxitos de ahora y, al final, lo independiente
+export function Style({ genre }) {
+  const label = GENRE_LABEL[genre] || genre
+  return (
+    <div className="view">
+      <h1 className="h1">{label}</h1>
+      {hasLegends(genre) && (
+        <>
+          <Section title="Listas imprescindibles"><div className="shelf">{legendLists(genre).map((l) => <ContextCard key={l.id} item={l} />)}</div></Section>
+          <Section title="Los más grandes"><div className="shelf">{legendArtists(genre, 12).map((a) => <ArtistCard key={a.id} artist={a} />)}</div></Section>
+        </>
+      )}
+      {CHART[genre] && <ChartShelf genre={genre} title={`Éxitos de ${label}`} />}
+      {GENRES.includes(genre) && <TrackShelf genre={genre} title="Música independiente en tendencia" />}
+    </div>
   )
 }
 
@@ -78,7 +130,15 @@ export function Home() {
   // Gustos del usuario: canciones "para ti" y estilos preferidos
   const mine = useAsync(() => taste(lib, searches), [tasteKey(lib, searches)])
   const DEFAULT = ['Electronic', 'Hip-Hop/Rap', 'Lo-Fi', 'Rock']
-  const genres = [...new Set([...(mine.data?.genres || []), ...DEFAULT])].slice(0, 5)
+  const likes = lib.prefs?.likes || [], dislikes = lib.prefs?.dislikes || []
+  const liked = [...new Set([...likes, ...(mine.data?.genres || [])])]
+  // Música independiente (Audius): solo de los estilos que existen allí, hasta tres
+  const genres = [...new Set([...liked, ...DEFAULT])].filter((g) => GENRES.includes(g) && !dislikes.includes(g)).slice(0, 3)
+  // Sus estilos, con los grupos famosos de cada uno (hasta cinco)
+  const fav = liked.filter((g) => hasLegends(g) && !dislikes.includes(g)).slice(0, 5)
+  const classics = mainLegends([...fav, ...dislikes])
+  // Éxitos de ahora de sus estilos preferidos (hasta dos)
+  const charts = liked.filter((g) => CHART[g] && !dislikes.includes(g)).slice(0, 2)
   const forYou = { loading: false, error: null, data: mine.data?.tracks || [] }
   const fyCtx = { type: 'foryou', id: '', name: 'Hecho para ti' }
   const h = new Date().getHours()
@@ -105,15 +165,23 @@ export function Home() {
       )}
       <Shelf title={`Hecho para ti, ${session.name}`} state={forYou}
         render={(t, i) => <TrackCard key={t.id} track={t} onPlay={() => playList(forYou.data, i, fyCtx)} />} />
-      <TrackShelf title="Tendencias de la semana" />
-      {genres.slice(0, 2).map((g, i) => (
-        <TrackShelf key={g} genre={g} title={mine.data?.genres?.includes(g) ? `Porque te gusta: ${GENRE_LABEL[g] || g}` : (GENRE_LABEL[g] || g)} />
+      {fav.slice(0, 2).map((g) => <BecauseShelf key={g} genre={g} />)}
+      <ChartShelf title="Éxitos del momento" />
+      {fav.slice(2, 3).map((g) => <BecauseShelf key={g} genre={g} />)}
+      {charts.map((g) => <ChartShelf key={g} genre={g} title={`Éxitos de ${GENRE_LABEL[g] || g}`} />)}
+      {fav.slice(3).map((g) => <BecauseShelf key={g} genre={g} />)}
+      {classics.length > 0 && (
+        <Section title={fav.length ? 'Más listas imprescindibles' : 'Listas imprescindibles'}>
+          <div className="shelf">{classics.slice(0, 10).map((l) => <ContextCard key={l.id} item={l} />)}</div>
+        </Section>
+      )}
+      {/* Lo independiente y las tendencias de la comunidad van al final */}
+      {genres.slice(0, 3).map((g) => (
+        <TrackShelf key={g} genre={g} title={`Música independiente: ${GENRE_LABEL[g] || g}`} />
       ))}
-      <Shelf title="Playlists populares" state={playlists} render={(p) => <ContextCard key={p.id} item={p} />} />
-      {genres.slice(2).map((g) => (
-        <TrackShelf key={g} genre={g} title={mine.data?.genres?.includes(g) ? `Porque te gusta: ${GENRE_LABEL[g] || g}` : (GENRE_LABEL[g] || g)} />
-      ))}
+      <Shelf title="Playlists de la comunidad" state={playlists} render={(p) => <ContextCard key={p.id} item={p} />} />
       <Shelf title="Álbumes libres en Internet Archive" state={albums} render={(p) => <ContextCard key={p.id} item={p} />} />
+      <TrackShelf title="Tendencias de la semana" />
       <p className="credits">
         Música servida por <a href="https://audius.co" rel="noopener noreferrer" target="_blank">Audius</a>,{' '}
         <a href="https://archive.org" rel="noopener noreferrer" target="_blank">Internet Archive</a> y YouTube. Esputi no aloja audio.
@@ -122,71 +190,44 @@ export function Home() {
   )
 }
 
-// Búsqueda única: el usuario no elige fuente; se consultan todas a la vez
-async function searchAll(q) {
-  const [a, yt, users, lists, ia, famous] = await Promise.all([
-    audius.searchTracks(q, 30).catch(() => []),
-    youtube.searchTracks(q, 10).catch(() => []),
-    audius.searchUsers(q, 12).catch(() => []),
-    audius.searchPlaylists(q, 20).catch(() => []),
-    // Archive puede tardar: si no responde pronto, no retrasa el resto
-    Promise.race([archive.searchAlbums(q).catch(() => []), new Promise((r) => setTimeout(() => r([]), 3500))]),
-    Promise.race([famousArtists(q).catch(() => []), new Promise((r) => setTimeout(() => r([]), 3000))]),
-  ])
-  return {
-    tracks: rank(q, interleave(yt, a)),
-    users: artistsFor(q, users, yt, famous),
-    albums: [...lists.filter((p) => p.isAlbum), ...ia],
-    pls: lists.filter((p) => !p.isAlbum),
-  }
+const FILTERS = [['all', 'Todo'], ['tracks', 'Canción'], ['artists', 'Artista'], ['albums', 'Álbum']]
+
+// "Resultado principal": lo que más probablemente se estaba buscando
+function TopResult({ top, onPlayTrack }) {
+  const { kind, item } = top
+  const isTrack = kind === 'track'
+  const ctxItem = kind === 'artist' ? { type: 'artist', id: item.id, name: item.name } : item
+  const active = usePlayer((s) => (isTrack ? s.current?.id === item.id : s.context?.type === ctxItem.type && String(s.context?.id) === String(ctxItem.id)))
+  const playing = usePlayer((s) => s.isPlaying)
+  const toggle = usePlayer((s) => s.toggle)
+  const go = () => { location.hash = isTrack ? (item.albumId ? '#/' + albumPath(item) : artistHref(item)) : '#/' + plPath(ctxItem.type, ctxItem.id) }
+  const play = (e) => { e.stopPropagation(); if (active) toggle(); else if (isTrack) onPlayTrack(); else playContext(ctxItem) }
+  const name = isTrack ? item.title : item.name
+  return (
+    <div className="top-result" role="link" tabIndex={0} onClick={go} onKeyDown={(e) => e.key === 'Enter' && go()}>
+      <Cover round={kind === 'artist'} src={item.cover} alt="" seed={name} className="top-cover" />
+      <div className={cx('top-name', name.length > 22 && 'long')}>{name}</div>
+      <div className="top-sub">
+        <span className="chip-kind">{kind === 'artist' ? 'Artista' : isTrack ? 'Canción' : item.kind || 'Álbum'}</span>
+        <span>{isTrack ? item.artist : kind === 'album' ? item.owner : ''}</span>
+      </div>
+      <div className={cx('top-play', active && playing && 'show')}><PlayFab playing={active && playing} onClick={play} label={`Reproducir ${name}`} /></div>
+    </div>
+  )
 }
-
-// Ordena por cuántas palabras de la búsqueda aparecen en "artista + título" (a igualdad, se respeta el orden)
-function rank(q, list) {
-  const words = norm(q).split(' ').filter(Boolean)
-  const hit = (t) => { const hay = ' ' + norm(t.artist + ' ' + t.title) + ' '; return words.filter((w) => hay.includes(' ' + w + ' ')).length }
-  return list.map((t, i) => [t, hit(t), i]).sort((x, y) => y[1] - x[1] || x[2] - y[2]).map((x) => x[0])
-}
-
-// Artistas por popularidad: primero los del catálogo general (iTunes los devuelve ordenados
-// por fama) y después los de Audius que contienen las palabras buscadas, por seguidores
-function artistsFor(q, users, yt, famous) {
-  const words = norm(q).split(' ').filter((w) => w.length > 2)
-  const nq = norm(q)
-  const fits = (name) => { const n = norm(name); return words.length ? words.every((w) => n.includes(w)) : n.includes(nq) }
-  const out = [], seen = new Set()
-  const add = (name, cover) => { const k = norm(name); if (k && !seen.has(k)) { seen.add(k); out.push({ id: 'yt:' + name, name, cover }) } }
-  const mine = yt.filter((t) => fits(t.artist + ' ' + t.title))
-  famous.filter(fits).forEach((name, i) => add(name, i === 0 ? mine[0]?.cover : ''))
-  if (!out.length && mine.length >= 3) {
-    const channel = mine.find((t) => norm(t.artist) === nq)
-    add(channel ? channel.artist : q.trim().replace(/(^|[ ])[a-zñáéíóú]/g, (c) => c.toUpperCase()), (channel || mine[0]).cover)
-  }
-  const fromAudius = users.filter((u) => fits(u.name) && !seen.has(norm(u.name))).sort((x, y) => (y.followers || 0) - (x.followers || 0))
-  return [...out, ...fromAudius]
-}
-
-// Artistas conocidos con ese nombre, de más a menos popular (catálogo público de iTunes)
-async function famousArtists(q) {
-  const r = await fetch('https://itunes.apple.com/search?entity=musicArtist&limit=5&term=' + encodeURIComponent(q))
-  return ((await r.json()).results || []).map((x) => x.artistName).filter(Boolean)
-}
-
-// Alterna dos listas: a1, b1, a2, b2…
-const interleave = (x, y) => { const out = []; for (let i = 0; i < Math.max(x.length, y.length); i++) { if (x[i]) out.push(x[i]); if (y[i]) out.push(y[i]) } return out }
-
-const FILTERS = [['all', 'Todo'], ['tracks', 'Canción'], ['users', 'Artista'], ['albums', 'Álbum']]
 
 export function Search({ q }) {
   const st = useAsync(() => (q ? searchAll(q) : Promise.resolve(null)), [q])
   const [filter, setFilter] = useState('all')
+  const playList = usePlayer((s) => s.playList)
   if (!q) {
     return (
       <div className="view">
         <h1 className="h1">Explorar todo</h1>
         <div className="genres">
-          {GENRES.map((g) => (
-            <a key={g} href={'#/' + plPath('genre', g)} className="genre" style={{ background: `hsl(${hueOf(g)} 60% 38%)` }}>{g}</a>
+          <a href={'#/' + plPath('chart', '')} className="genre" style={{ background: 'hsl(141 60% 30%)' }}>Éxitos del momento</a>
+          {STYLES.map((g) => (
+            <a key={g} href={'#/style/' + encodeURIComponent(g)} className="genre" style={{ background: `hsl(${hueOf(g)} 60% 38%)` }}>{GENRE_LABEL[g] || g}</a>
           ))}
         </div>
       </div>
@@ -195,8 +236,8 @@ export function Search({ q }) {
   const d = st.data
   const all = filter === 'all'
   const ctx = { type: 'search', id: q, name: `Búsqueda: ${q}` }
-  const nothing = d && (all ? !d.tracks.length && !d.users.length && !d.albums.length && !d.pls.length : !d[filter].length)
-  const what = { all: 'resultados', tracks: 'canciones', users: 'artistas', albums: 'álbumes' }[filter]
+  const nothing = d && (all ? !d.tracks.length && !d.artists.length && !d.albums.length && !d.pls.length : !d[filter].length)
+  const what = { all: 'resultados', tracks: 'canciones', artists: 'artistas', albums: 'álbumes' }[filter]
   return (
     <div className="view">
       <div className="tabs" role="tablist" aria-label="Tipo de resultado">
@@ -208,14 +249,24 @@ export function Search({ q }) {
         <Empty icon="search" title={`Sin ${what} para «${q}»`}>Prueba con otras palabras{all ? '' : ' o cambia el filtro'}.</Empty>
       ) : (
         <>
-          {(all || filter === 'users') && d.users.length > 0 && (
-            <Section title="Artistas"><div className={all ? 'shelf' : 'grid'}>{d.users.map((u) => <ArtistCard key={u.id} artist={u} />)}</div></Section>
+          {all && d.top && (
+            <div className="top-grid">
+              <Section title="Resultado principal">
+                <TopResult top={d.top} onPlayTrack={() => playList(d.tracks, Math.max(0, d.tracks.indexOf(d.top.item)), ctx)} />
+              </Section>
+              {d.tracks.length > 0 && (
+                <Section title="Canciones" more={{ label: 'Mostrar todo', onClick: () => setFilter('tracks') }}>
+                  <TrackList tracks={d.tracks} limit={4} context={ctx} header={false} />
+                </Section>
+              )}
+            </div>
           )}
-          {(all || filter === 'tracks') && d.tracks.length > 0 && (
-            <Section title="Canciones"><TrackList tracks={all ? d.tracks.slice(0, 8) : d.tracks} context={ctx} header={false} /></Section>
+          {filter === 'tracks' && d.tracks.length > 0 && <TrackList tracks={d.tracks} context={ctx} showAlbum />}
+          {(all || filter === 'artists') && d.artists.length > 0 && (
+            <Section title={all ? 'Artistas' : ''}><div className={all ? 'shelf' : 'grid'}>{d.artists.map((u) => <ArtistCard key={u.id} artist={u} />)}</div></Section>
           )}
           {(all || filter === 'albums') && d.albums.length > 0 && (
-            <Section title="Álbumes"><div className={all ? 'shelf' : 'grid'}>{d.albums.map((p) => <ContextCard key={p.type + p.id} item={p} />)}</div></Section>
+            <Section title={all ? 'Álbumes' : ''}><div className={all ? 'shelf' : 'grid'}>{d.albums.map((p) => <ContextCard key={p.type + p.id} item={p} />)}</div></Section>
           )}
           {all && d.pls.length > 0 && (
             <Section title="Playlists"><div className="shelf">{d.pls.map((p) => <ContextCard key={p.id} item={p} />)}</div></Section>
@@ -226,34 +277,105 @@ export function Search({ q }) {
   )
 }
 
+// Ficha de artista: del catálogo (cat:), de Audius o, si solo se conoce el nombre, la que corresponda
 export function Artist({ id }) {
-  const isYt = id.startsWith('yt:')
-  const st = useAsync(() => (isYt
-    ? youtube.searchTracks(id.slice(3), 10).then((t) => [{ name: id.slice(3), cover: t[0]?.cover, external: true }, rank(id.slice(3), t)])
-    : Promise.all([audius.user(id), audius.userTracks(id, 50)])), [id])
-  const playList = usePlayer((s) => s.playList)
+  if (id.startsWith('cat:')) return <CatArtist key={id} n={id.slice(4)} />
+  if (id.startsWith('yt:') || id.startsWith('name:')) return <NamedArtist key={id} name={id.slice(id.indexOf(':') + 1)} />
+  return <SourceArtist key={id} id={id} load={() => Promise.all([audius.user(id), audius.userTracks(id, 50)])} />
+}
+
+function NamedArtist({ name }) {
+  const st = useAsync(() => catalog.artistByName(name).catch(() => null), [name])
+  if (st.loading) return <div className="view"><Spinner /></div>
+  if (st.data) return <CatArtist n={st.data.id.slice(4)} />
+  return <SourceArtist id={'name:' + name} load={() => youtube.searchTracks(name, 12).then((t) => [{ name, cover: t[0]?.cover, external: true }, t])} />
+}
+
+function ArtistHead({ a, sub, active, playing, onPlay, children }) {
+  return (
+    <>
+      <div className="pl-head" style={{ '--h': hueOf(a.name) }}>
+        <Cover round src={a.cover} alt={`Foto de ${a.name}`} seed={a.name} className="pl-cover" />
+        <div className="pl-info">
+          <span className="pl-kind">{a.verified ? 'Artista verificado' : 'Artista'}</span>
+          <h1 className={cx(a.name.length > 28 && 'long')}>{a.name}</h1>
+          {sub && <p className="pl-meta">{sub}</p>}
+        </div>
+      </div>
+      <div className="pl-actions">
+        <PlayFab playing={active && playing} onClick={onPlay} />
+        {children}
+      </div>
+    </>
+  )
+}
+
+function useArtistPlayback(id) {
   const active = usePlayer((s) => s.context?.type === 'artist' && s.context?.id === id)
   const playing = usePlayer((s) => s.isPlaying)
   const toggle = usePlayer((s) => s.toggle)
+  const playList = usePlayer((s) => s.playList)
+  return { active, playing, toggle, playList }
+}
+
+function SourceArtist({ id, load }) {
+  const st = useAsync(load, [id])
+  const { active, playing, toggle, playList } = useArtistPlayback(id)
   if (st.loading) return <div className="view"><Spinner /></div>
   if (st.error) return <div className="view"><Empty icon="alert" title="No se pudo cargar el artista">Inténtalo de nuevo.</Empty></div>
   const [u, tracks] = st.data
   const ctx = { type: 'artist', id, name: u.name, cover: u.cover }
   return (
     <div className="view pl">
-      <div className="pl-head" style={{ '--h': hueOf(u.name) }}>
-        <Cover round src={u.cover} alt={`Foto de ${u.name}`} seed={u.name} className="pl-cover" />
-        <div className="pl-info">
-          <span className="pl-kind">{u.verified ? 'Artista verificado' : 'Artista'}</span>
-          <h1>{u.name}</h1>
-          {!u.external && <p className="pl-meta">{(u.followers || 0).toLocaleString('es-ES')} seguidores</p>}
-        </div>
-      </div>
-      <div className="pl-actions">
-        <PlayFab playing={active && playing} onClick={() => (active ? toggle() : playList(tracks, 0, ctx))} />
-      </div>
+      <ArtistHead a={u} sub={!u.external && `${(u.followers || 0).toLocaleString('es-ES')} seguidores`} active={active} playing={playing}
+        onPlay={() => (active ? toggle() : playList(tracks, 0, ctx))} />
       {tracks.length ? <Section title="Populares"><TrackList tracks={tracks} context={ctx} header={false} /></Section>
         : <Empty title="Este artista aún no tiene canciones" />}
+    </div>
+  )
+}
+
+function CatArtist({ n }) {
+  const id = 'cat:' + n
+  const st = useAsync(async () => {
+    const a = await catalog.artist(n)
+    const [top, albums, related] = await Promise.all([
+      catalog.artistTop(n, 20), catalog.artistAlbums(n, a.name).catch(() => []), catalog.related(n).catch(() => []),
+    ])
+    return { a, top, albums, related }
+  }, [n])
+  const { active, playing, toggle, playList } = useArtistPlayback(id)
+  const [more, setMore] = useState(false)
+  const [open, setOpen] = useState({})
+  if (st.loading) return <div className="view"><Spinner /></div>
+  if (st.error) return <div className="view"><Empty icon="alert" title="No se pudo cargar el artista">Inténtalo de nuevo.</Empty></div>
+  const { a, top, albums, related } = st.data
+  const ctx = { type: 'artist', id, name: a.name, cover: a.cover }
+  // Discografía sin ediciones repetidas, de lo más nuevo a lo más antiguo
+  const seen = new Set()
+  const disc = albums.filter((x) => { const k = norm(x.name) + x.record; if (seen.has(k)) return false; seen.add(k); return true })
+    .sort((x, y) => String(y.year).localeCompare(String(x.year))).map((x) => ({ ...x, owner: [x.year, x.kind].filter(Boolean).join(' • ') }))
+  const groups = [['Álbumes', disc.filter((x) => x.record === 'album')], ['Sencillos y EP', disc.filter((x) => x.record !== 'album')]]
+  return (
+    <div className="view pl">
+      <ArtistHead a={a} sub={a.fans ? `${a.fans.toLocaleString('es-ES')} seguidores` : ''} active={active} playing={playing}
+        onPlay={() => (active ? toggle() : playList(top, 0, ctx))}>
+        <a className="btn ghost" href={'#/' + plPath('radio', n)}><Icon name="sync" size={16} /> Radio</a>
+      </ArtistHead>
+      {top.length ? (
+        <Section title="Populares">
+          <TrackList tracks={top} limit={more ? 10 : 5} context={ctx} header={false} />
+          {top.length > 5 && <button className="link more-btn" onClick={() => setMore(!more)}>{more ? 'Ver menos' : 'Ver más'}</button>}
+        </Section>
+      ) : <Empty title="Este artista aún no tiene canciones" />}
+      {groups.map(([title, list]) => list.length > 0 && (
+        <Section key={title} title={title} more={list.length > 5 ? { label: open[title] ? 'Mostrar menos' : 'Mostrar todo', onClick: () => setOpen({ ...open, [title]: !open[title] }) } : undefined}>
+          <div className={open[title] ? 'grid' : 'shelf'}>{list.map((p) => <ContextCard key={p.id} item={p} />)}</div>
+        </Section>
+      ))}
+      {related.length > 0 && (
+        <Section title="Los fans también escuchan"><div className="shelf">{related.map((u) => <ArtistCard key={u.id} artist={u} />)}</div></Section>
+      )}
     </div>
   )
 }

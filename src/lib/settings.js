@@ -1,7 +1,7 @@
 // Ajustes del navegador (no se envían al servidor)
 import { store } from './util'
 
-let settings = { spotifyClientId: '', ytKey: '', ...store.get('esputi.settings', {}) }
+let settings = { spotifyClientId: '', ytKey: '', keepScreen: true, autoplay: true, ...store.get('esputi.settings', {}) }
 let defaults = {}
 
 export const getSettings = () => ({ ...settings, spotifyClientId: settings.spotifyClientId || defaults.spotifyClientId || '' })
