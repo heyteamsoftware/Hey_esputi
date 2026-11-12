@@ -5,9 +5,13 @@ import react from '@vitejs/plugin-react'
 // para avisar de que hay una versión nueva
 const BUILD = Date.now().toString(36)
 
-// La app se sirve desde https://myappsserver.duckdns.org/esputi/
+// La app se sirve desde https://myappsserver.duckdns.org/esputi/ y la copia de pruebas
+// desde /esputi2/ (ESPUTI_DIR=esputi2 al compilar)
+const DIR = process.env.ESPUTI_DIR || 'esputi'
+const BASE = '/' + DIR + '/'
+
 export default defineConfig({
-  base: '/esputi/',
+  base: BASE,
   define: { __BUILD__: JSON.stringify(BUILD) },
   plugins: [
     react(),
@@ -23,7 +27,7 @@ export default defineConfig({
     host: '127.0.0.1',
     // En desarrollo, la mini-API de usuarios se pide al servidor real
     proxy: {
-      '/esputi/api': { target: 'https://myappsserver.duckdns.org', changeOrigin: true },
+      [BASE + 'api']: { target: 'https://myappsserver.duckdns.org', changeOrigin: true },
     },
   },
 })

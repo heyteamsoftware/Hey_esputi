@@ -27,10 +27,13 @@ export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().to
 
 export const cx = (...a) => a.filter(Boolean).join(' ')
 
+// La copia de pruebas (/esputi2/) comparte dominio con la buena: sus datos del navegador
+// llevan un prefijo para no mezclarse (sesión, ajustes, cuenta de Spotify…)
+const NS = import.meta.env.BASE_URL === '/esputi/' ? '' : import.meta.env.BASE_URL.replace(/\//g, '') + ':'
 export const store = {
-  get(k, d = null) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v) } catch { return d } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)) } catch { /* lleno o bloqueado */ } },
-  del(k) { try { localStorage.removeItem(k) } catch { /* nada */ } },
+  get(k, d = null) { try { const v = localStorage.getItem(NS + k); return v == null ? d : JSON.parse(v) } catch { return d } },
+  set(k, v) { try { localStorage.setItem(NS + k, JSON.stringify(v)) } catch { /* lleno o bloqueado */ } },
+  del(k) { try { localStorage.removeItem(NS + k) } catch { /* nada */ } },
 }
 
 export const decodeHtml = (s = '') => { const t = document.createElement('textarea'); t.innerHTML = s; return t.value }
