@@ -48,7 +48,7 @@ export default function Login() {
   return (
     <div className="login">
       <div className="login-box">
-        <img src={import.meta.env.BASE_URL + 'favicon.svg'} alt="Logotipo de Esputi" width="56" height="56" />
+        <img src={import.meta.env.BASE_URL + 'favicon.svg?v=2'} alt="Logotipo de Esputi" width="56" height="56" />
         {step === 1 ? (
           <form onSubmit={(e) => { e.preventDefault(); goAnimal() }} noValidate>
             <h1>Entra en Esputi</h1>

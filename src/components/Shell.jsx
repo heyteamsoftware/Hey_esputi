@@ -32,7 +32,7 @@ export function TopBar({ route }) {
     <header className="topbar">
       <div className="topbar-left">
         <a href="#/" className="logo" aria-label="Esputi, ir al inicio">
-          <img src={import.meta.env.BASE_URL + 'favicon.svg'} alt="" width="32" height="32" />
+          <img src={import.meta.env.BASE_URL + 'favicon.svg?v=2'} alt="" width="32" height="32" />
         </a>
         <button className="round-btn hide-m" onClick={() => history.back()} aria-label="Atrás"><Icon name="back" /></button>
         <button className="round-btn hide-m" onClick={() => history.forward()} aria-label="Adelante"><Icon name="forward" /></button>
