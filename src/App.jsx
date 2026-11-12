@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Login from './components/Login'
 import InstallBanner from './components/Install'
+import UpdateBanner from './components/Update'
 import { ContextMenu, CookieBanner, Library, MobileNav, Toast, TopBar } from './components/Shell'
 import { PlayerBar, QueuePanel } from './components/Player'
 import { Spinner } from './components/Common'
@@ -79,6 +80,7 @@ export default function App() {
       <Toast />
       <CookieBanner />
       {session && ready && <InstallBanner />}
+      <UpdateBanner />
     </>
   )
 }

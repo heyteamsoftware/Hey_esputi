@@ -407,3 +407,5 @@ details.box[open] summary { margin-bottom: 12px; }
 .install-btns { display: flex; gap: 8px; align-items: center; flex: none; }
 .install .btn { padding: 8px 16px; font-size: 13px; }
 @media (max-width: 768px) { .install { flex-direction: row; flex-wrap: wrap; align-items: center; } .install p { flex: 1 1 60%; } .install-btns { width: 100%; justify-content: flex-end; } }
+.update { z-index: 95; border: 1px solid var(--green); }
+.update .btn { padding: 8px 16px; font-size: 13px; }
