@@ -1,0 +1,24 @@
+{
+  "name": "Esputi",
+  "short_name": "Esputi",
+  "description": "Música abierta y tus playlists en un solo sitio",
+  "start_url": "/esputi/",
+  "scope": "/esputi/",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#121212",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "/esputi/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/esputi/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /esputi/
+Disallow: /esputi/api/
+Disallow: /esputi/data/
+Disallow: /esputi/admin/
+Sitemap: https://myappsserver.duckdns.org/esputi/sitemap.xml
