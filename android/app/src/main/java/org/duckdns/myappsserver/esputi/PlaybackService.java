@@ -30,7 +30,7 @@ import java.net.URL;
 // Mantiene la app viva con la pantalla apagada y pone los mandos (con título y carátula)
 // en la notificación y en la pantalla de bloqueo
 public class PlaybackService extends Service {
-    private static final String CHANNEL = "esputi";
+    private static final String CHANNEL = "playback";
     private static final String PREV = "prev", TOGGLE = "toggle", NEXT = "next", QUIT = "quit";
     private static final int IDLE_CHECKS = 10; // minutos en silencio antes de dejar dormir al móvil
 
@@ -64,8 +64,13 @@ public class PlaybackService extends Service {
         super.onCreate();
         self = this;
         NotificationManager nm = getSystemService(NotificationManager.class);
-        NotificationChannel ch = new NotificationChannel(CHANNEL, "Reproducción", NotificationManager.IMPORTANCE_LOW);
+        // Importancia normal (sin sonido ni vibración): con «baja» algunos móviles no ponen el icono
+        // en la barra de estado. La importancia de un canal ya creado no se puede cambiar: canal nuevo
+        nm.deleteNotificationChannel("esputi");
+        NotificationChannel ch = new NotificationChannel(CHANNEL, "Reproducción", NotificationManager.IMPORTANCE_DEFAULT);
         ch.setShowBadge(false);
+        ch.setSound(null, null);
+        ch.enableVibration(false);
         nm.createNotificationChannel(ch);
         wake = ((PowerManager) getSystemService(Context.POWER_SERVICE)).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "esputi:play");
         wifi = ((WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE)).createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "esputi:play");
@@ -153,6 +158,7 @@ public class PlaybackService extends Service {
             .setContentText(title.isEmpty() ? "Elige una canción" : artist)
             .setContentIntent(open)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .addAction(button(R.drawable.ic_prev, "Anterior", PREV, 1))
             .addAction(button(playing ? R.drawable.ic_pause : R.drawable.ic_play, playing ? "Pausar" : "Reproducir", TOGGLE, 2))
