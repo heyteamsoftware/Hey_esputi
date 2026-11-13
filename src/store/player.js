@@ -159,6 +159,15 @@ export const usePlayer = create((set, get) => {
     onError: () => fail(seq),
   })
 
+  // La vista web de la app Android puede no traer Media Session: se pone una mínima,
+  // porque la app lee de ahí el título, el artista y la carátula para la pantalla de bloqueo
+  if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') {
+    try {
+      window.MediaMetadata = function (o) { Object.assign(this, o) }
+      Object.defineProperty(navigator, 'mediaSession', { configurable: true, value: { metadata: null, setActionHandler() {}, setPositionState() {} } })
+    } catch { /* se queda sin mandos */ }
+  }
+
   const setMediaSession = (t) => {
     if (!('mediaSession' in navigator)) return
     try {
