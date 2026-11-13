@@ -81,6 +81,8 @@ switch ($a) {
             $res[] = [
                 'name' => $u['name'],
                 'created' => $u['created'] ?? '',
+                'client' => $u['client'] ?? '',
+                'seen' => $u['seen'] ?? '',
                 'liked' => count($lib['liked'] ?? []),
                 'playlists' => count($lib['playlists'] ?? []),
                 'spotify' => count($lib['spotify'] ?? []),

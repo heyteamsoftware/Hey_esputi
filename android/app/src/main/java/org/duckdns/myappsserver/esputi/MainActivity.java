@@ -65,6 +65,9 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true);
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setSupportMultipleWindows(false);
+        // La web sabe así qué versión de la app es (se ve en el panel de administración)
+        try { s.setUserAgentString(s.getUserAgentString() + " EsputiApp/" + getPackageManager().getPackageInfo(getPackageName(), 0).versionName); }
+        catch (Exception e) { /* sin versión */ }
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
 
         web.addJavascriptInterface(new Bridge(), "EsputiApp");

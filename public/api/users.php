@@ -84,6 +84,24 @@ function auth(array $users, array $in): string {
     return $k;
 }
 
+// Desde dónde entra cada usuario: la app Android (con su versión) o el navegador.
+// Se guarda solo esa etiqueta y el día, no el User-Agent entero
+function client(): string {
+    $ua = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+    if (preg_match('~EsputiApp/(\d+(?:\.\d+){0,2})~', $ua, $m)) return 'App ' . $m[1];
+    if (str_contains($ua, '; wv)')) return 'App (anterior a 1.5)';
+    $names = ['EdgA' => 'Edge', 'Edg/' => 'Edge', 'OPR' => 'Opera', 'SamsungBrowser' => 'Samsung', 'Firefox' => 'Firefox',
+        'FxiOS' => 'Firefox', 'CriOS' => 'Chrome', 'Chrome' => 'Chrome', 'Safari' => 'Safari'];
+    foreach ($names as $k => $v) if (str_contains($ua, $k)) return 'Navegador (' . $v . ')';
+    return 'Navegador';
+}
+function seen(array &$users, string $k, string $file): void {
+    $c = client(); $d = date('Y-m-d');
+    if (($users[$k]['client'] ?? '') === $c && ($users[$k]['seen'] ?? '') === $d) return;
+    $users[$k]['client'] = $c; $users[$k]['seen'] = $d;
+    wr($file, $users);
+}
+
 switch ($a) {
     case 'search': {
         $q = ukey((string)($_GET['q'] ?? ''));
@@ -104,7 +122,7 @@ switch ($a) {
         if (isset($users[$k])) out(['error' => 'Ese nombre ya existe'], 409);
         if (count($users) >= MAX_USERS) out(['error' => 'Registro cerrado temporalmente'], 503);
         rate($rlFile, 'r:' . $ip, 8, 3600);
-        $u = ['name' => $name, 'hash' => password_hash($animal, PASSWORD_DEFAULT), 'tokens' => [], 'created' => date('c')];
+        $u = ['name' => $name, 'hash' => password_hash($animal, PASSWORD_DEFAULT), 'tokens' => [], 'created' => date('c'), 'client' => client(), 'seen' => date('Y-m-d')];
         $token = new_token($u);
         $users[$k] = $u; wr($usersFile, $users);
         out(['ok' => true, 'name' => $name, 'token' => $token]);
@@ -116,17 +134,21 @@ switch ($a) {
         rate($rlFile, 'l:' . $ip . ':' . $k, 5, 600);
         if (!password_verify($animal, $users[$k]['hash'])) out(['error' => 'Ese no es tu animal'], 401);
         rate_clear($rlFile, 'l:' . $ip . ':' . $k);
-        $token = new_token($users[$k]); wr($usersFile, $users);
+        $token = new_token($users[$k]);
+        $users[$k]['client'] = client(); $users[$k]['seen'] = date('Y-m-d');
+        wr($usersFile, $users);
         out(['ok' => true, 'name' => $users[$k]['name'], 'token' => $token]);
     }
     case 'getlib': {
         $users = rd($usersFile); $k = auth($users, $in);
+        seen($users, $k, $usersFile);
         $f = $DATA . '/lib_' . sha1($k) . '.json.php';
         $lib = rd($f);
         out(['ok' => true, 'library' => $lib ?: null]);
     }
     case 'setlib': {
         $users = rd($usersFile); $k = auth($users, $in);
+        seen($users, $k, $usersFile);
         $lib = $in['library'] ?? null;
         if (!is_array($lib)) out(['error' => 'Biblioteca no válida'], 400);
         if (strlen(json_encode($lib)) > MAX_LIB_BYTES) out(['error' => 'Biblioteca demasiado grande'], 413);

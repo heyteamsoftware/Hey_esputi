@@ -33,7 +33,7 @@
     tbody.textContent = ''
     list.forEach(function (u) {
       var tr = document.createElement('tr')
-      ;[u.name, fmt(u.created), u.liked, u.playlists, u.spotify, fmt(u.updated)].forEach(function (v) {
+      ;[u.name, u.client ? u.client + (u.seen ? ' · ' + u.seen.split('-').reverse().join('/') : '') : '—', fmt(u.created), u.liked, u.playlists, u.spotify, fmt(u.updated)].forEach(function (v) {
         var td = document.createElement('td'); td.textContent = v; tr.appendChild(td)
       })
       var td = document.createElement('td')
